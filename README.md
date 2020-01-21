@@ -54,21 +54,21 @@
 - [字段掩码（Fields masks）](#字段掩码Fields-masks)
   - [语法](#语法)
   - [使用方法](#使用方法)
-- Swagger文档
-  - 使用`@api.doc()`装饰器进行文档编辑
-  - 自动记录模型
-  - `@api.marshal_with()`装饰器
-  - `@api.expect()`装饰器
-  - 使用`@api.response`装饰器进行文档编辑
-  - `@api.route()`装饰器
-  - 对字段进行文档编写
-  - 对函数进行文档编写
+- [Swagger文档](#Swagger文档)
+  - [使用`@api.doc()`装饰器进行文档编辑](#使用apidoc装饰器进行文档编辑)
+  - [模型自动记录](#模型自动记录)
+  - [`@api.marshal_with()`装饰器](#apimarshal_with装饰器)
+  - [`@api.expect()`装饰器](#apiexpect装饰器)
+  - [使用`@api.response`装饰器进行文档编辑](#使用apiresponse装饰器进行文档编辑)
+  - [`@api.route()`装饰器](#apiroute装饰器) 
+  - [对字段进行文档编写](#对字段进行文档编写) 
+  - [对函数进行文档编写](#对函数进行文档编写) 
   - 级联（Cascading）
-  - 已弃用标记
-  - 隐藏文档
+  - [已弃用标记](#已弃用标记) 
+  - [隐藏文档](#隐藏文档) 
   - 文档授权（Documenting authorizations）
-  - 展示支持信息（Expose vendor Extensions）
-  - 导出Swagger格式
+  - [展示支持信息（Expose vendor Extensions）](#展示支持信息Expose-vendor-Extensions) 
+  - [导出Swagger格式](#导出Swagger格式)
   - Swagger UI
 - [Postman](#Postman) 
 - [项目扩展](#项目扩展)
@@ -435,6 +435,567 @@ model = api.model('Person', {
 ```
 
 要覆盖默认掩码，您需要提供另一个掩码或将*用作掩码。
+
+# Swagger文档
+
+Swagger API文档是自动生成的，可从您API的根目录访问。你可以使用 `@api.doc()` 修饰器配置你的文档。
+
+## 使用`@api.doc()`装饰器进行文档编辑
+
+`@api.doc()` 修饰器使你可以为文档添加额外信息。
+
+你可以为一个类或者函数添加文档：
+
+```python
+@api.route('/my-resource/<id>', endpoint='my-resource')
+@api.doc(params={'id': 'An ID'})
+class MyResource(Resource):
+    def get(self, id):
+        return {}
+
+    @api.doc(responses={403: 'Not Authorized'})
+    def post(self, id):
+        api.abort(403)
+```
+
+## 模型自动记录
+
+所有由 `model()`  、 `clone()` 和 `inherit()` 实例化的模型（model）都会被自动记录到Swagger文档中。
+
+`inherit()` 函数会将父类和子类都注册到Swagger的模型（model）定义中：
+
+```python
+parent = api.model('Parent', {
+    'name': fields.String,
+    'class': fields.String(discriminator=True)
+})
+
+child = api.inherit('Child', parent, {
+    'extra': fields.String
+})
+```
+
+上面的代码会生成下面的Swagger定义：
+
+```json
+{
+    "Parent": {
+        "properties": {
+            "name": {"type": "string"},
+            "class": {"type": "string"}
+        },
+        "discriminator": "class",
+        "required": ["class"]
+    },
+    "Child": {
+        "allOf": [
+            {
+                "$ref": "#/definitions/Parent"
+            }, {
+                "properties": {
+                    "extra": {"type": "string"}
+                }
+            }
+        ]
+    }
+}
+```
+
+## `@api.marshal_with()`装饰器
+
+这个装饰器和原生的 `marshal_with()` 装饰器几乎完全一致，除了这个装饰器会记录函数文档。可选参数代码允许您指定期望的HTTP状态码（默认为200）。可选参数 `as_list` 允许您指定是否将对象作为列表返回。
+
+```python
+resource_fields = api.model('Resource', {
+    'name': fields.String,
+})
+
+@api.route('/my-resource/<id>', endpoint='my-resource')
+class MyResource(Resource):
+    @api.marshal_with(resource_fields, as_list=True)
+    def get(self):
+        return get_objects()
+
+    @api.marshal_with(resource_fields, code=201)
+    def post(self):
+        return create_object(), 201
+```
+
+`Api.marshal_list_with()` 装饰器严格等同于 `Api.marshal_with(fields,** **as_list=True)()`。
+
+```python
+resource_fields = api.model('Resource', {
+    'name': fields.String,
+})
+
+@api.route('/my-resource/<id>', endpoint='my-resource')
+class MyResource(Resource):
+    @api.marshal_list_with(resource_fields)
+    def get(self):
+        return get_objects()
+
+    @api.marshal_with(resource_fields)
+    def post(self):
+        return create_object()
+```
+
+## `@api.expect()`装饰器
+
+`@api.expect()` 装饰器允许你指定所需的输入字段。它接受一个可选的布尔参数 `validate` ，指示负载（payload）是否需要被验证。
+
+可以通过将 `RESTPLUS_VALIDATE` 配置设置为 `True` 或将 `validate = True` 传递给API构造函数来全局设置验证功能。
+
+以下示例是等效的：
+
+- 使用 `@api.expect()`装饰器：
+
+  ```python
+  resource_fields = api.model('Resource', {
+      'name': fields.String,
+  })
+  
+  @api.route('/my-resource/<id>')
+  class MyResource(Resource):
+      @api.expect(resource_fields)
+      def get(self):
+          pass
+  ```
+
+- 使用 `@api.doc()` 装饰器：
+
+  ```python
+  resource_fields = api.model('Resource', {
+      'name': fields.String,
+  })
+  
+  @api.route('/my-resource/<id>')
+  class MyResource(Resource):
+      @api.doc(body=resource_fields)
+      def get(self):
+          pass
+  ```
+
+您可以将列表指定为预期输入：
+
+```python
+resource_fields = api.model('Resource', {
+    'name': fields.String,
+})
+
+@api.route('/my-resource/<id>')
+class MyResource(Resource):
+    @api.expect([resource_fields])
+    def get(self):
+        pass
+```
+
+您可以使用 **RequestParser** 定义期望的输入：
+
+```python
+parser = api.parser()
+parser.add_argument('param', type=int, help='Some param', location='form')
+parser.add_argument('in_files', type=FileStorage, location='files')
+
+
+@api.route('/with-parser/', endpoint='with-parser')
+class WithParserResource(restplus.Resource):
+    @api.expect(parser)
+    def get(self):
+        return {}
+```
+
+可以在特定端点上启用或禁用验证：
+
+```python
+resource_fields = api.model('Resource', {
+    'name': fields.String,
+})
+
+@api.route('/my-resource/<id>')
+class MyResource(Resource):
+    # Payload validation disabled
+    @api.expect(resource_fields)
+    def post(self):
+        pass
+
+    # Payload validation enabled
+    @api.expect(resource_fields, validate=True)
+    def post(self):
+        pass
+```
+
+通过config进行应用程序范围验证设置的示例：
+
+```python
+app.config['RESTPLUS_VALIDATE'] = True
+
+api = Api(app)
+
+resource_fields = api.model('Resource', {
+    'name': fields.String,
+})
+
+@api.route('/my-resource/<id>')
+class MyResource(Resource):
+    # Payload validation enabled
+    @api.expect(resource_fields)
+    def post(self):
+        pass
+
+    # Payload validation disabled
+    @api.expect(resource_fields, validate=False)
+    def post(self):
+        pass
+```
+
+通过构造函数进行应用程序范围验证设置的示例：
+
+```python
+api = Api(app, validate=True)
+
+resource_fields = api.model('Resource', {
+    'name': fields.String,
+})
+
+@api.route('/my-resource/<id>')
+class MyResource(Resource):
+    # Payload validation enabled
+    @api.expect(resource_fields)
+    def post(self):
+        pass
+
+    # Payload validation disabled
+    @api.expect(resource_fields, validate=False)
+    def post(self):
+        pass
+```
+
+## 使用`@api.response`装饰器进行文档编辑
+
+`@api.response` 装饰器允许您记录已知的响应，并且他是 `@api.doc(responses='...')` 的简化写法。
+
+以下两种定义是等效的：
+
+```python
+@api.route('/my-resource/')
+class MyResource(Resource):
+    @api.response(200, 'Success')
+    @api.response(400, 'Validation Error')
+    def get(self):
+        pass
+
+
+@api.route('/my-resource/')
+class MyResource(Resource):
+    @api.doc(responses={
+        200: 'Success',
+        400: 'Validation Error'
+    })
+    def get(self):
+        pass
+```
+
+您可以选择将响应模型指定为第三个参数：
+
+```python
+model = api.model('Model', {
+    'name': fields.String,
+})
+
+@api.route('/my-resource/')
+class MyResource(Resource):
+    @api.response(200, 'Success', model)
+    def get(self):
+        pass
+```
+
+`@api.marshal_with()` 修饰器会自动记录响应：
+
+```python
+model = api.model('Model', {
+    'name': fields.String,
+})
+
+@api.route('/my-resource/')
+class MyResource(Resource):
+    @api.response(400, 'Validation error')
+    @api.marshal_with(model, code=201, description='Object created')
+    def post(self):
+        pass
+```
+
+如果你不知道状态码的时候，你可以指定一个默认响应。
+
+```python
+@api.route('/my-resource/')
+class MyResource(Resource):
+    @api.response('default', 'Error')
+    def get(self):
+        pass
+```
+
+## `@api.route()`装饰器
+
+你可以指定一个类范围的文档通过 `Api.route()` 的 `doc` 参数。这个参数可以接受和 `@api.doc()` 装饰器相同的参数。
+
+例如，这两种定义是等效的：
+
+- 使用 `@api.doc()`:
+
+  ```python
+  @api.route('/my-resource/<id>', endpoint='my-resource')
+  @api.doc(params={'id': 'An ID'})
+  class MyResource(Resource):
+      def get(self, id):
+          return {}
+  ```
+
+- 使用 `@api.route()`:
+
+  ```python
+  @api.route('/my-resource/<id>', endpoint='my-resource', doc={'params':{'id': 'An ID'}})
+  class MyResource(Resource):
+      def get(self, id):
+          return {}
+  ```
+
+### 单资源类多路由（Multiple Routes per Resource）
+
+多个 `Api.route()` 修饰器可以为单个 `资源类(Resource)` 添加多个路由。 `doc` 参数可以为每条路由配置文档。
+
+例如，下面的 `描述(description)` 只适用于路由 `/also-my-resource/<id>` ：
+
+```python
+@api.route("/my-resource/<id>")
+@api.route(
+    "/also-my-resource/<id>",
+    doc={"description": "Alias for /my-resource/<id>"},
+)
+class MyResource(Resource):
+    def get(self, id):
+        return {}
+```
+
+这里，路由 `/also-my-resource/<id>` 则标记为已弃用：
+
+```python
+@api.route("/my-resource/<id>")
+@api.route(
+    "/also-my-resource/<id>",
+    doc={
+        "description": "Alias for /my-resource/<id>, this route is being phased out in V2",
+        "deprecated": True,
+    },
+)
+class MyResource(Resource):
+    def get(self, id):
+        return {}
+```
+
+除非明确覆盖，否则由 `Api.doc()` 给 `资源类(Resource)` 绑定的文档将在各路由间共享：
+
+```python
+@api.route("/my-resource/<id>")
+@api.route(
+"/also-my-resource/<id>",
+doc={"description": "Alias for /my-resource/<id>"},
+)
+@api.doc(params={"id": "An ID", description="My resource"})
+class MyResource(Resource):
+def get(self, id):
+    return {}
+```
+
+这里， 来自 `Api.doc()` 的 `id` 文档同时存在于两条路由上， `/my-resource/<id>` 继承了 `My resource` 由 `Api.doc()` 记录的描述，而 `/also-my-resource/<id>` 用 `Alias for /my-resource/<id>` 覆盖了描述。
+
+用 `doc` 标记的路由将获得一个 *唯一* 的Swagger `operationId` 。没有 `doc` 参数的路由将拥有相同的 `operationId` ，它们会被视为相同的操作。
+
+## 对字段进行文档编写
+
+每个Flask-RESTPlus字段都可以可选的接受以下几个用于文档的参数：
+
+- `required` ：一个布朗值标识这个字段是否是必要的（默认：`False`）
+- `description`：一些字段的详细描述（默认：`None` ）
+- `example` ：展示时显示的示例（默认：None）
+
+这里还有一些特定字段的属性：
+
+- `String` 字段可以接受以下参数：
+  - `enum`  ：一个限制授权值的数组。
+  - `min_length` ：字符串的最小长度。
+  - `max_length` ：字符串的最大长度。
+  - `pattern` ：一个正则表达式用于验证。
+- `Integer` 、 `Float` 和 `Arbitrary` 字段可以接受以下参数：
+  - `min` ：可以接受的最小值。
+  - `max` ：可以接受的最大值。
+  - `ExclusiveMin` ：如果为 `True` ，则区间不包含最小值。
+  - `exclusiveMax` ：如果为 `True` ，则区间不包含最大值。
+  - `multiple` ：限制输入的数字是这个数的倍数。
+- `DateTime` 字段可以接受  `min` 、 `max` 、 `exclusiveMin`  和 `exclusiveMax` 参数。这些参数必须是 **dates** 或 **datetimes** （不是ISO字符串就是原生对象）。
+
+```
+my_fields = api.model('MyModel', {
+    'name': fields.String(description='The name', required=True),
+    'type': fields.String(description='The object type', enum=['A', 'B']),
+    'age': fields.Integer(min=0),
+})
+```
+
+## 对函数进行文档编写
+
+每一个资源类都会被记录为一个Swagger路径。
+
+每一个资源类的函数（`get` ,  `post `,  `put` ,  `delete` ,  `path` ,  `options` ,  `head`）都会被记录为一个Swagger操作。
+
+您可以使用 `id` 关键字参数指定唯一的Swagger `operationId` ：
+
+```python
+@api.route('/my-resource/')
+class MyResource(Resource):
+    @api.doc(id='get_something')
+    def get(self):
+        return {}
+```
+
+设置第一个参数也可以达到相同的目的：
+
+```python
+@api.route('/my-resource/')
+class MyResource(Resource):
+    @api.doc('get_something')
+    def get(self):
+        return {}
+```
+
+如果没有特别指定，默认将以下面的格式设定 `operationId`：
+
+```
+{{verb}}_{{resource class name | camelCase2dashes }}
+```
+
+前面的例子中，默认的 `operationId` 将会是 `get_my_resource` 。
+
+你可以通过给 `default_id` 传入一个回调函数来覆盖默认的 `operationId` 生成器。这个回调函数接受下面两个参数：
+
+- 资源类的类名
+- 小写的HTTP方法
+
+```python
+def default_id(resource, method):
+    return ''.join((method, resource))
+
+api = Api(app, default_id=default_id)
+```
+
+前面的例子中，生成的  `operationId` 将会是 `getMyResource` 。
+
+每个操作都会自动纳入其命名空间的标签下。如果资源类是直接归属于根目录，则自动纳入默认标签中。
+
+### 函数参数
+
+
+
+## 已弃用标记
+
+你可以通过 `@api.deprecated` 修饰器将资源类或函数标记为已弃用：
+
+```python
+# Deprecate the full resource
+@api.deprecated
+@api.route('/resource1/')
+class Resource1(Resource):
+    def get(self):
+        return {}
+
+# Deprecate methods
+@api.route('/resource4/')
+class Resource4(Resource):
+    def get(self):
+        return {}
+
+    @api.deprecated
+    def post(self):
+        return {}
+
+    def put(self):
+        return {}
+```
+
+## 隐藏文档
+
+用下面的方法你可以将一些资源类或函数从文档种隐藏：
+
+```python
+# Hide the full resource
+@api.route('/resource1/', doc=False)
+class Resource1(Resource):
+    def get(self):
+        return {}
+
+@api.route('/resource2/')
+@api.doc(False)
+class Resource2(Resource):
+    def get(self):
+        return {}
+
+@api.route('/resource3/')
+@api.hide
+class Resource3(Resource):
+    def get(self):
+        return {}
+
+# Hide methods
+@api.route('/resource4/')
+@api.doc(delete=False)
+class Resource4(Resource):
+    def get(self):
+        return {}
+
+    @api.doc(False)
+    def post(self):
+        return {}
+
+    @api.hide
+    def put(self):
+        return {}
+
+    def delete(self):
+        return {}
+```
+
+> ### 提示：
+>
+> 没有附加的资源类的命名空间会自动的在文档中隐藏。
+
+## 展示支持信息（Expose vendor Extensions）
+
+Swagger允许你自定义 [支持信息（vendor extensions ）](http://swagger.io/specification/#specification-extensions-128) ，而Flask-RESTPlus可以通过 `@api.vendor` 修饰器对其进行设置。
+
+它同时支持 *dict* 或 *kwargs* 扩展，并自动执行 `x-prefix` ：
+
+```python
+@api.route('/vendor/')
+@api.vendor(extension1='any authorized value')
+class Vendor(Resource):
+    @api.vendor({
+        'extension-1': {'works': 'with complex values'},
+        'x-extension-3': 'x- prefix is optionnal',
+    })
+    def get(self):
+        return {}
+```
+
+## 导出Swagger格式
+
+你可以将你的API导出为Swagger格式：
+
+```python
+from flask import json
+
+from myapp import api
+
+print(json.dumps(api.__schema__))
+```
 
 # 异常处理
 
