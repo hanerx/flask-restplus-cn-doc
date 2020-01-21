@@ -51,9 +51,9 @@
   - [Flask终止助手](#Flask终止助手) 
   - [Flask-RESTPlus终止助手](#Flask-RESTPlus终止助手) 
   - [ `@api.errorhandler` 装饰器](#apierrorhandler-装饰器) 
-- 字段影藏（Fields masks）
-  - 语法
-  - 使用方法
+- [字段掩码（Fields masks）](#字段掩码Fields-masks)
+  - [语法](#语法)
+  - [使用方法](#使用方法)
 - Swagger文档
   - 使用`@api.doc()`装饰器进行文档编辑
   - 自动记录模型
@@ -74,7 +74,7 @@
 - [项目扩展](#项目扩展)
   - [多命名空间](#多命名空间)
   - [使用蓝图](#使用蓝图) 
-  - [具有可重用名称空间的多个API（Multiple APIs with reusable namespaces）](#具有可重用名称空间的多个API（Multiple APIs with reusable namespaces）)
+  - [具有可重用名称空间的多个API（Multiple APIs with reusable namespaces）](#具有可重用名称空间的多个apimultiple-apis-with-reusable-namespaces)
 - [完整实例](#完整实例)
 - API
 
@@ -344,6 +344,97 @@ class Todo(Resource):
 - 使用 **marshal()** 局部设置：return marshal(data, fields, ordered=True)
 
 # 响应编组
+
+# 字段掩码（Fields masks）
+
+Flask-RESTPlus通过一个自定义请求头支持部分对象获取（partial object fetching）也就是字段掩码（fields mask）。
+
+默认情况下头名为 `X-Fields` ，但是它可以被 `RESTPLUS_MASK_HEADER` 参数修改。
+
+## 语法
+
+语法非常简单。你只要提供一个包含字段名并用逗号分隔的列表，可以选择性的用括号包裹。
+
+```python
+# These two mask are equivalents
+mask = '{name,age}'
+# or
+mask = 'name,age'
+data = requests.get('/some/url/', headers={'X-Fields': mask})
+assert len(data) == 2
+assert 'name' in data
+assert 'age' in data
+```
+
+实现嵌套字段只需要将内容用大括号包裹即可。
+
+```python
+mask = '{name, age, pet{name}}'
+```
+
+嵌套规范适用于嵌套对象或对象列表：
+
+```python
+# Will apply the mask {name} to each pet
+# in the pets list.
+mask = '{name, age, pets{name}}'
+```
+
+特殊字符米字星（*）代表“所有剩余字段（all remaining fields）”。它仅允许指定嵌套过滤：
+
+```python
+# Will apply the mask {name} to each pet
+# in the pets list and take all other root fields
+# without filtering.
+mask = '{pets{name},*}'
+
+# Will not filter anything
+mask = '*'
+```
+
+## 使用方法
+
+默认情况下，每次使用 **api.marshal** 或 **@api.marshal_with** 时，如果存在标头，掩码将自动应用。
+
+当你每次使用 **@api.marshal_with** 修饰器时，标头将作为Swagger参数展示。
+
+由于Swagger并不允许展示全局标头，这将会使你的Swagger文档更加冗长。你可以修改 `RESTPLUS_MASK_SWAGGER` 为 `False` 来禁用这个功能。
+
+您也可以指定默认的掩码，如果找不到掩码，则将应用默认掩码。
+
+```python
+class MyResource(Resource):
+    @api.marshal_with(my_model, mask='name,age')
+    def get(self):
+        pass
+```
+
+默认掩码也可以在模型级别处理：
+
+```python
+model = api.model('Person', {
+    'name': fields.String,
+    'age': fields.Integer,
+    'boolean': fields.Boolean,
+}, mask='{name,age}')
+```
+
+它将被导出到 `x-mask` 字段：
+
+```json
+{"definitions": {
+    "Test": {
+        "properties": {
+            "age": {"type": "integer"},
+            "boolean": {"type": "boolean"},
+            "name": {"type": "string"}
+        },
+        "x-mask": "{name,age}"
+    }
+}}
+```
+
+要覆盖默认掩码，您需要提供另一个掩码或将*用作掩码。
 
 # 异常处理
 
