@@ -4,7 +4,7 @@
 
 # 相关信息
 
-- 文档对应版本：0.13.0
+- 文档对应版本：0.13.0 stable
 - 本文档是个人翻译版本，非官方翻译版，一切内容以官方英文原版为准。
 - 本文档与Flask-RESTPlus开发组无任何关系，提交bug等开发问题请移步项目所在地：https://github.com/noirbizarre/flask-restplus
 - 部分翻译内容可能并不准确
@@ -46,11 +46,11 @@
   - 文件上传
   - 错误处理
   - 错误消息
-- 异常处理
-  - Http异常处理
-  - Flask终止助手
-  - Flask-RESTPlus终止助手
-  - `@api.errorhandler`装饰器
+- [异常处理](#异常处理)
+  - [Http异常处理](#Http异常处理)
+  - [Flask终止助手](#Flask终止助手) 
+  - [Flask-RESTPlus终止助手](#Flask-RESTPlus终止助手) 
+  - [`@api.errorhandler`装饰器](#@api.errorhandler 装饰器) 
 - 字段影藏（Fields masks）
   - 语法
   - 使用方法
@@ -70,7 +70,7 @@
   - 展示支持信息（Expose vendor Extensions）
   - 导出Swagger格式
   - Swagger UI
-- Postman
+- [Postman](#Postman) 
 - 项目扩展
   - 多个命名空间
   - 使用蓝图
@@ -239,7 +239,7 @@ class Todo3(Resource):
 
 ## 端点（Endpoint）
 
-在很多情况下，一个API中，你的一个资源类可能需要对应多个url地址。你可以传入多个url地址到**add_resource()** 函数中或者使用 **route()** 装饰器，这两个方法都由`Api`对象提供。其中这的任意一个方法都能实现多url路由到你的资源类上：
+在很多情况下，一个API中，你的一个资源类可能需要对应多个url地址。你可以传入多个url地址到 **add_resource()** 函数中或者使用 **route()** 装饰器，这两个方法都由`Api`对象提供。其中这的任意一个方法都能实现多url路由到你的资源类上：
 
 ```python
 api.add_resource(HelloWorld, '/hello', '/world')
@@ -331,7 +331,7 @@ class Todo(Resource):
         return TodoDao(todo_id='my_todo', task='Remember the milk')
 ```
 
-上面的例子我们拿了一个Python对象并准备将其序列化。**marlshal_with()**装饰器将会将其通过 `model`进行转化。**fields.Url** 字段是个很特别的字段，他将选取一个端点在响应中生成带该端点的URL。使用**marlshal_with()**同时也会为文档添加Swagger格式的文档内容。大部分字段类型已经预定义过。查看 `字段（fields）`导航获取完整列表。
+上面的例子我们拿了一个Python对象并准备将其序列化。 **marlshal_with()** 装饰器将会将其通过 `model`进行转化。 **fields.Url**  字段是个很特别的字段，他将选取一个端点在响应中生成带该端点的URL。使用 **marlshal_with()** 同时也会为文档添加Swagger格式的文档内容。大部分字段类型已经预定义过。查看 `字段（fields）`导航获取完整列表。
 
 ### 指令保存
 
@@ -339,9 +339,229 @@ class Todo(Resource):
 
 - 在**Api**上全局设置：`api = Api(ordered=True)`
 
-- 在**命名空间（Namespace）**上全局设置：`ns = Namespace(ordered=True)`
+- 在 **命名空间（Namespace）** 上全局设置：`ns = Namespace(ordered=True)`
 
-- 使用**marshal()**局部设置：return marshal(data, fields, ordered=True)
+- 使用 **marshal()** 局部设置：return marshal(data, fields, ordered=True)
 
 # 响应编组
+
+# 异常处理
+
+## Http异常处理
+
+Werkzeug HTTP异常（Werkzeug HTTPException）将适当的自动重写描述（description）属性。
+
+```python
+from werkzeug.exceptions import BadRequest
+raise BadRequest()
+```
+
+上述代码将会返回一个400状态码和输出：
+
+```json
+{
+    "message": "The browser (or proxy) sent a request that this server could not understand."
+}
+```
+
+而这段代码：
+
+```python
+from werkzeug.exceptions import BadRequest
+raise BadRequest('My custom message')
+```
+
+将会输出：
+
+```json
+{
+    "message": "My custom message"
+}
+```
+
+你可以通过修改data属性值添加额外的参数到你的异常中：
+
+```python
+from werkzeug.exceptions import BadRequest
+e = BadRequest('My custom message')
+e.data = {'custom': 'value'}
+raise e
+```
+
+这将输出：
+
+```json
+{
+    "message": "My custom message",
+    "custom": "value"
+}
+```
+
+## Flask终止助手
+
+**终止助手（abort helper）** 适当的将错误封装成了一个 **Http异常（ HTTPException ）** ，因此它们表现几乎相同。
+
+```python
+from flask import abort
+abort(400)
+```
+
+上述代码将会返回一个400状态码和输出：
+
+```json
+{
+    "message": "The browser (or proxy) sent a request that this server could not understand."
+}
+```
+
+而这段代码：
+
+```python
+from flask import abort
+abort(400, 'My custom message')
+```
+
+将会输出：
+
+```json
+{
+    "message": "My custom message"
+}
+```
+
+## Flask-RESTPlus终止助手
+
+**errors.abort()** 与 **Namespace.abort()** 终止助手与原生Flask **Flask.abort()** 原理相似，但将会把关键字参数（keyword arguments）打包进响应中。
+
+```python
+from flask_restplus import abort
+abort(400, custom='value')
+```
+
+上述代码将会返回一个400状态码和输出：
+
+```json
+{
+    "message": "The browser (or proxy) sent a request that this server could not understand.",
+    "custom": "value"
+}
+```
+
+而这段代码：
+
+```python
+from flask import abort
+abort(400, 'My custom message', custom='value')
+```
+
+将会输出：
+
+```json
+{
+    "message": "My custom message",
+    "custom": "value"
+}
+```
+
+## `@api.errorhandler` 装饰器
+
+`@api.errorhandler`装饰器将为指定的异常（或继承于这个异常的任何异常）注册一个特别的处理机（handler），你也可以用同样的方法使用 Flask/Blueprint 的 `@errorhandler`装饰器。
+
+```python
+@api.errorhandler(RootException)
+def handle_root_exception(error):
+    '''Return a custom message and 400 status code'''
+    return {'message': 'What you want'}, 400
+
+
+@api.errorhandler(CustomException)
+def handle_custom_exception(error):
+    '''Return a custom message and 400 status code'''
+    return {'message': 'What you want'}, 400
+
+
+@api.errorhandler(AnotherException)
+def handle_another_exception(error):
+    '''Return a custom message and 500 status code'''
+    return {'message': error.specific}
+
+
+@api.errorhandler(FakeException)
+def handle_fake_exception_with_header(error):
+    '''Return a custom message and 400 status code'''
+    return {'message': error.message}, 400, {'My-Header': 'Value'}
+
+
+@api.errorhandler(NoResultFound)
+def handle_no_result_exception(error):
+    '''Return a custom not found error message and 404 status code'''
+    return {'message': error.specific}, 404
+```
+
+> ### 提示：
+>
+> 一个带有描述的“未找到结果（NoResultFound）”异常是 OpenAPI 2.0规范所规定的。处理机种的文档字符串（docstring）（译者：就是那坨三引号）将会被输出到swagger.json中作为描述。
+
+你也可以专门为异常编写文档：
+
+```python
+@api.errorhandler(FakeException)
+@api.marshal_with(error_fields, code=400)
+@api.header('My-Header',  'Some description')
+def handle_fake_exception_with_header(error):
+    '''This is a custom error'''
+    return {'message': error.message}, 400, {'My-Header': 'Value'}
+
+
+@api.route('/test/')
+class TestResource(Resource):
+    def get(self):
+        '''
+        Do something
+
+        :raises CustomException: In case of something
+        '''
+        pass
+```
+
+在这个例子里，`:raises:`字符串将会被自动提取并填充至文档400错误处。
+
+你只需要在使用时忽略参数，就可以重写默认的 `errorhandler`：
+
+```python
+@api.errorhandler
+def default_error_handler(error):
+    '''Default error handler'''
+    return {'message': str(error)}, getattr(error, 'code', 500)
+```
+
+> ### 提示：
+>
+> Flask-RESTPlus 默认会返回一个带消息的错误信息。如果你在自定义一个错误响应并且不需要消息字段的话，你可以在配置文件中将 `ERROR_INCLUDE_MESSAGE`  改为 `False` 以禁用消息字段。
+
+`errorhandler`也可以在命名空间中注册。在命名空间中注册的处理机将会覆盖在 **Api** 中注册的处理机。
+
+```python
+ns = Namespace('cats', description='Cats related operations')
+
+@ns.errorhandler
+def specific_namespace_error_handler(error):
+    '''Namespace error handler'''
+    return {'message': str(error)}, getattr(error, 'code', 500)
+```
+
+# Postman
+
+为了方便你测试，你可以将你的API导出为一个 [Postman](https://www.getpostman.com/) 集合（Postman collection）。
+
+```python
+from flask import json
+
+from myapp import api
+
+urlvars = False  # Build query strings in URLs
+swagger = True  # Export Swagger specifications
+data = api.as_postman(urlvars=urlvars, swagger=swagger)
+print(json.dumps(data))
+```
 
