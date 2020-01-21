@@ -50,7 +50,7 @@
   - [Http异常处理](#Http异常处理)
   - [Flask终止助手](#Flask终止助手) 
   - [Flask-RESTPlus终止助手](#Flask-RESTPlus终止助手) 
-  - [@api.errorhandler 装饰器](#api.errorhandler-装饰器) 
+  - [@api.errorhandler 装饰器](#apierrorhandler-装饰器) 
 - 字段影藏（Fields masks）
   - 语法
   - 使用方法
