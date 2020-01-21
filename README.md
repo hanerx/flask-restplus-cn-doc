@@ -7,7 +7,7 @@
 - 文档对应版本：0.13.0 stable
 - 本文档是个人翻译版本，非官方翻译版，一切内容以官方英文原版为准。
 - 本文档与Flask-RESTPlus开发组无任何关系，提交bug等开发问题请移步项目所在地：https://github.com/noirbizarre/flask-restplus
-- 部分翻译内容可能并不准确
+- 部分翻译内容可能并不准确，没把握的地方我都标记了原文
 - 文档采用[Typora](http://typora.io/)编写，推荐使用Typora进行查看
 
 # 目录
@@ -50,7 +50,7 @@
   - [Http异常处理](#Http异常处理)
   - [Flask终止助手](#Flask终止助手) 
   - [Flask-RESTPlus终止助手](#Flask-RESTPlus终止助手) 
-  - [@api.errorhandler 装饰器](#apierrorhandler-装饰器) 
+  - [ `@api.errorhandler` 装饰器](#apierrorhandler-装饰器) 
 - 字段影藏（Fields masks）
   - 语法
   - 使用方法
@@ -71,11 +71,11 @@
   - 导出Swagger格式
   - Swagger UI
 - [Postman](#Postman) 
-- 项目扩展
-  - 多个命名空间
-  - 使用蓝图
-  - 具有可重用名称空间的多个API（Multiple APIs with reusable namespaces）
-- 完整例子
+- [项目扩展](#项目扩展)
+  - [多命名空间](#多命名空间)
+  - [使用蓝图](#使用蓝图) 
+  - [具有可重用名称空间的多个API（Multiple APIs with reusable namespaces）](#具有可重用名称空间的多个API（Multiple APIs with reusable namespaces）)
+- [完整实例](#完整实例)
 - API
 
 # 安装
@@ -565,3 +565,336 @@ data = api.as_postman(urlvars=urlvars, swagger=swagger)
 print(json.dumps(data))
 ```
 
+# 项目扩展
+
+本章涵盖构建稍微复杂一些的Flask-RESTPlus应用程序，该程序将为在实际部署一个基于Flask-RESTPlus的应用程序前提供一些最佳的实践。[快速开始](#快速开始) 章节更加适合第一次接触Flask-RESTPlus的人，所以如果你是Flask-RESTPlus的初学者请先查看快速开始章节。
+
+## 多命名空间
+
+这里有很多种方法组织你的Flask-RESTPlus应用程序代码，而下面我们将介绍一种在大型应用程序种保持良好的组织性和优秀的可扩展性的一种方法。
+
+Flask-RESTPlus 提供了一种几乎与 Flask蓝图（Flask’s blueprint）相同的功能。它的主要思路是将应用程序分割为多个可重用的 命名空间（Namespace）。
+
+下面是一个目录结构的例子：
+
+```shell
+project/
+├── app.py
+├── core
+│   ├── __init__.py
+│   ├── utils.py
+│   └── ...
+└── apis
+    ├── __init__.py
+    ├── namespace1.py
+    ├── namespace2.py
+    ├── ...
+    └── namespaceX.py
+```
+
+`app` 模块将作为一个遵循经典的Flask模式之一（详见 [Larger Applications](https://flask.palletsprojects.com/en/1.1.x/patterns/packages/#larger-applications) and [Application Factories](https://flask.palletsprojects.com/en/1.1.x/patterns/appfactories/#app-factories)）的主程序入口（entry point）。
+
+`core` 模块包含了事务逻辑。实际上你爱叫啥叫啥，甚至可以是很多个包。
+
+`apis` 模块将作为你的API的主入口，你需要在这里导入并注册你的应用程序，而命名空间模块就按照你平时写Flask蓝图的时候写就行。
+
+一个命名空间的模块要包含模型和资源类的声明。举个例子：
+
+```python
+from flask_restplus import Namespace, Resource, fields
+
+api = Namespace('cats', description='Cats related operations')
+
+cat = api.model('Cat', {
+    'id': fields.String(required=True, description='The cat identifier'),
+    'name': fields.String(required=True, description='The cat name'),
+})
+
+CATS = [
+    {'id': 'felix', 'name': 'Felix'},
+]
+
+@api.route('/')
+class CatList(Resource):
+    @api.doc('list_cats')
+    @api.marshal_list_with(cat)
+    def get(self):
+        '''List all cats'''
+        return CATS
+
+@api.route('/<id>')
+@api.param('id', 'The cat identifier')
+@api.response(404, 'Cat not found')
+class Cat(Resource):
+    @api.doc('get_cat')
+    @api.marshal_with(cat)
+    def get(self, id):
+        '''Fetch a cat given its identifier'''
+        for cat in CATS:
+            if cat['id'] == id:
+                return cat
+        api.abort(404)
+```
+
+`apis.__init__` 模块应该用于整合他们：
+
+```python
+from flask_restplus import Api
+
+from .namespace1 import api as ns1
+from .namespace2 import api as ns2
+# ...
+from .namespaceX import api as nsX
+
+api = Api(
+    title='My Title',
+    version='1.0',
+    description='A description',
+    # All API metadatas
+)
+
+api.add_namespace(ns1)
+api.add_namespace(ns2)
+# ...
+api.add_namespace(nsX)
+```
+
+你可以在注册API的时候为你的命名空间添加 `网址前缀（url-prefixes）` 。你不需要在定义命名空间对象的时候指定 `网址前缀（url-prefixes）` 。
+
+```python
+from flask_restplus import Api
+
+from .namespace1 import api as ns1
+from .namespace2 import api as ns2
+# ...
+from .namespaceX import api as nsX
+
+api = Api(
+    title='My Title',
+    version='1.0',
+    description='A description',
+    # All API metadatas
+)
+
+api.add_namespace(ns1, path='/prefix/of/ns1')
+api.add_namespace(ns2, path='/prefix/of/ns2')
+# ...
+api.add_namespace(nsX, path='/prefix/of/nsX')
+```
+
+用这种模式，你只需要在 `app.py` 中这样注册你的API即可：
+
+```python
+from flask import Flask
+from apis import api
+
+app = Flask(__name__)
+api.init_app(app)
+
+app.run(debug=True)
+```
+
+## 使用蓝图
+
+查看Flask文档中的 “[使用蓝图进行模块化编程（ Modular Applications with Blueprints）](https://flask.palletsprojects.com/en/1.1.x/blueprints/#blueprints)” 以了解什么是蓝图和为什么使用蓝图。以下是一个将 **Api** 链接到 **蓝图（Blueprint）** 上的例子：
+
+```python
+from flask import Blueprint
+from flask_restplus import Api
+
+blueprint = Blueprint('api', __name__)
+api = Api(blueprint)
+# ...
+```
+
+使用蓝图将使你可以将你的API挂载到任何网址前缀（url-prefixes）下，如/或你的应用程序的子域名：
+
+```python
+from flask import Flask
+from apis import blueprint as api
+
+app = Flask(__name__)
+app.register_blueprint(api, url_prefix='/api/1')
+app.run(debug=True)
+```
+
+> ### 提示：
+>
+> 由于在注册蓝图的时候会处理应用程序的路由设置，所以不需要调用 **Api.init_app()** 。 
+
+> ### 提示：
+>
+> 在使用蓝图时，请记住调用 **url_for()** 时加上蓝图名：
+>
+> ```python
+> # without blueprint
+> url_for('my_api_endpoint')
+> 
+> # with blueprint
+> url_for('api.my_api_endpoint')
+> ```
+
+## 具有可重用名称空间的多个API（Multiple APIs with reusable namespaces）
+
+有时候你可能需要维护一个API的多个版本。如果你使用的时命名空间来搭建你的API，那么将其扩展成多个API是个很简单的事情。
+
+根据先前的布局，我们可以将其迁移到以下目录结构：
+
+```shell
+project/
+├── app.py
+├── apiv1.py
+├── apiv2.py
+└── apis
+    ├── __init__.py
+    ├── namespace1.py
+    ├── namespace2.py
+    ├── ...
+    └── namespaceX.py
+```
+
+每个 `apivX.py` 都拥有如下的结构：
+
+```python
+from flask import Blueprint
+from flask_restplus import Api
+
+api = Api(blueprint)
+
+from .apis.namespace1 import api as ns1
+from .apis.namespace2 import api as ns2
+# ...
+from .apis.namespaceX import api as nsX
+
+blueprint = Blueprint('api', __name__, url_prefix='/api/1')
+api = Api(blueprint
+    title='My Title',
+    version='1.0',
+    description='A description',
+    # All API metadatas
+)
+
+api.add_namespace(ns1)
+api.add_namespace(ns2)
+# ...
+api.add_namespace(nsX)
+```
+
+而 `app` 将这样挂载它们：
+
+```python
+from flask import Flask
+from api1 import blueprint as api1
+from apiX import blueprint as apiX
+
+app = Flask(__name__)
+app.register_blueprint(api1)
+app.register_blueprint(apiX)
+app.run(debug=True)
+```
+
+这些只是建议，你可以根据你的需求随意修改。查看  [github repository examples folder](https://github.com/noirbizarre/flask-restplus/tree/master/examples)  获取更多完整实例。
+
+# 完整实例
+
+下面是 [TodoMVC](http://todomvc.com/)  的完整API实例：
+
+```python
+from flask import Flask
+from flask_restplus import Api, Resource, fields
+from werkzeug.contrib.fixers import ProxyFix
+
+app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app)
+api = Api(app, version='1.0', title='TodoMVC API',
+    description='A simple TodoMVC API',
+)
+
+ns = api.namespace('todos', description='TODO operations')
+
+todo = api.model('Todo', {
+    'id': fields.Integer(readonly=True, description='The task unique identifier'),
+    'task': fields.String(required=True, description='The task details')
+})
+
+
+class TodoDAO(object):
+    def __init__(self):
+        self.counter = 0
+        self.todos = []
+
+    def get(self, id):
+        for todo in self.todos:
+            if todo['id'] == id:
+                return todo
+        api.abort(404, "Todo {} doesn't exist".format(id))
+
+    def create(self, data):
+        todo = data
+        todo['id'] = self.counter = self.counter + 1
+        self.todos.append(todo)
+        return todo
+
+    def update(self, id, data):
+        todo = self.get(id)
+        todo.update(data)
+        return todo
+
+    def delete(self, id):
+        todo = self.get(id)
+        self.todos.remove(todo)
+
+
+DAO = TodoDAO()
+DAO.create({'task': 'Build an API'})
+DAO.create({'task': '?????'})
+DAO.create({'task': 'profit!'})
+
+
+@ns.route('/')
+class TodoList(Resource):
+    '''Shows a list of all todos, and lets you POST to add new tasks'''
+    @ns.doc('list_todos')
+    @ns.marshal_list_with(todo)
+    def get(self):
+        '''List all tasks'''
+        return DAO.todos
+
+    @ns.doc('create_todo')
+    @ns.expect(todo)
+    @ns.marshal_with(todo, code=201)
+    def post(self):
+        '''Create a new task'''
+        return DAO.create(api.payload), 201
+
+
+@ns.route('/<int:id>')
+@ns.response(404, 'Todo not found')
+@ns.param('id', 'The task identifier')
+class Todo(Resource):
+    '''Show a single todo item and lets you delete them'''
+    @ns.doc('get_todo')
+    @ns.marshal_with(todo)
+    def get(self, id):
+        '''Fetch a given resource'''
+        return DAO.get(id)
+
+    @ns.doc('delete_todo')
+    @ns.response(204, 'Todo deleted')
+    def delete(self, id):
+        '''Delete a task given its identifier'''
+        DAO.delete(id)
+        return '', 204
+
+    @ns.expect(todo)
+    @ns.marshal_with(todo)
+    def put(self, id):
+        '''Update a task given its identifier'''
+        return DAO.update(id, api.payload)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+```
+
+你可以在  [github repository examples folder](https://github.com/noirbizarre/flask-restplus/tree/master/examples)  获取更多完整实例。
