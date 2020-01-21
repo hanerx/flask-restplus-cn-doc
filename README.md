@@ -1,4 +1,4 @@
-# Flask-RESTPlus 中文文档
+# Flask-RESTPlus 中文文档（Flask-RESTPlus Chinese document）
 
 本文档是Flask-RESTPlus的文档中文翻译版，英文原版地址：https://flask-restplus.readthedocs.io/en/stable/
 
@@ -63,7 +63,7 @@
   - [`@api.route()`装饰器](#apiroute装饰器) 
   - [对字段进行文档编写](#对字段进行文档编写) 
   - [对函数进行文档编写](#对函数进行文档编写) 
-  - 级联（Cascading）
+  - [级联（Cascading）](#级联（Cascading）) 
   - [已弃用标记](#已弃用标记) 
   - [隐藏文档](#隐藏文档) 
   - 文档授权（Documenting authorizations）
@@ -163,7 +163,7 @@ $ curl http://127.0.0.1:5000/hello
 {"hello": "world"}
 ```
 
-你同时可以将自动文档作为你的API根目录（默认是开启的）。在本例子中，根目录为：http://127.0.0.1:5000/。查看 [Swagger UI](#Swagger UI) 章节获取完整信息。
+你同时可以将自动文档作为你的API根目录（默认是开启的）。在本例子中，根目录为：http://127.0.0.1:5000/ 。查看  [Swagger UI](#Swagger UI)  章节获取完整信息。
 
 ## 面向资源（Resource）的路由
 
@@ -816,7 +816,7 @@ def get(self, id):
 
 - `required` ：一个布朗值标识这个字段是否是必要的（默认：`False`）
 - `description`：一些字段的详细描述（默认：`None` ）
-- `example` ：展示时显示的示例（默认：None）
+- `example` ：展示时显示的示例（默认： `None` ）
 
 这里还有一些特定字段的属性：
 
@@ -892,6 +892,125 @@ api = Api(app, default_id=default_id)
 每个操作都会自动纳入其命名空间的标签下。如果资源类是直接归属于根目录，则自动纳入默认标签中。
 
 ### 函数参数
+
+来自url地址的参数会自动被记录。你可以通过 `api.doc()` 修饰器的 `params` 参数添加额外的内容：
+
+```python
+@api.route('/my-resource/<id>', endpoint='my-resource')
+@api.doc(params={'id': 'An ID'})
+class MyResource(Resource):
+    pass
+```
+
+或者使用 `api.params`  修饰器：
+
+```python
+@api.route('/my-resource/<id>', endpoint='my-resource')
+@api.param('id', 'An ID')
+class MyResource(Resource):
+    pass
+```
+
+### 输入和输出模型
+
+你可以通过 `api.doc()` 修饰器的 `model` 关键字指定序列化输出模型。
+
+对于 `PUT` 和 `POST` 方法，使用 `body` 关键字指定输入模型。
+
+```python
+fields = api.model('MyModel', {
+    'name': fields.String(description='The name', required=True),
+    'type': fields.String(description='The object type', enum=['A', 'B']),
+    'age': fields.Integer(min=0),
+})
+
+
+@api.model(fields={'name': fields.String, 'age': fields.Integer})
+class Person(fields.Raw):
+    def format(self, value):
+        return {'name': value.name, 'age': value.age}
+
+
+@api.route('/my-resource/<id>', endpoint='my-resource')
+@api.doc(params={'id': 'An ID'})
+class MyResource(Resource):
+    @api.doc(model=fields)
+    def get(self, id):
+        return {}
+
+    @api.doc(model='MyModel', body=Person)
+    def post(self, id):
+        return {}
+```
+
+如果 `body` 和 `formData` 同时使用，将会造成 **SpecsError** 异常。
+
+模型同时也可以被 **RequestParser** 指定。
+
+```python
+parser = api.parser()
+parser.add_argument('param', type=int, help='Some param', location='form')
+parser.add_argument('in_files', type=FileStorage, location='files')
+
+@api.route('/with-parser/', endpoint='with-parser')
+class WithParserResource(restplus.Resource):
+    @api.expect(parser)
+    def get(self):
+        return {}
+```
+
+> ### 提示：
+>
+> 解码后的有效载荷（decoded payload）将以字典的形式作为 有效载荷（payload）的属性存在在请求上下文中（request context）。
+>
+> ```python
+> @api.route('/my-resource/')
+> class MyResource(Resource):
+>     def get(self):
+>         data = api.payload
+> ```
+
+> ### 提示：
+>
+> 更推荐使用 **RequestParser** 而不是 `api.param()` 修饰器对表单进行记录，因为前者同时支持表单验证。
+
+### 头（headers）
+
+你可以使用 `api.header()` 修饰器快捷记录响应头内容。
+
+```python
+@api.route('/with-headers/')
+@api.header('X-Header', 'Some class header')
+class WithHeaderResource(restplus.Resource):
+    @api.header('X-Collection', type=[str], collectionType='csv')
+    def get(self):
+        pass
+```
+
+如果你要指定一个只出现在响应中的标头，只需要使用 `@api.response` 的 `headers` 关键字即可。
+
+```python
+@api.route('/response-headers/')
+class WithHeaderResource(restplus.Resource):
+    @api.response(200, 'Success', headers={'X-Header': 'Some header'})
+    def get(self):
+        pass
+```
+
+记录 期望或者需求（expected/request） 的标头请使用 `@api.expect` 修饰符。
+
+```python
+parser = api.parser()
+parser.add_argument('Some-Header', location='headers')
+
+@api.route('/expect-headers/')
+@api.expect(parser)
+class ExpectHeaderResource(restplus.Resource):
+    def get(self):
+        pass
+```
+
+## 级联（Cascading）
 
 
 
