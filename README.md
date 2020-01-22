@@ -54,7 +54,7 @@
   - [基础参数](#基础参数)
   - [必要参数](#必要参数)
   - [多个数值 & 列表](#多个数值和列表)
-  - [其他源（Other Destinations）](#其他源（Other-Destinations）)
+  - [其他源（Other Destinations）](#其他源（other-destinations）)
   - [参数位置](#参数位置)
   - [多位置参数](#多位置参数)
   - [高级类型处理](#高级类型处理)
