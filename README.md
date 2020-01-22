@@ -43,17 +43,17 @@
   - [跳过None字段（Skip fields which value is None）](#跳过None字段Skip-fields-which-value-is-None) 
   - [使用Json格式定义模型](#使用Json格式定义模型) 
 - [请求解析](#请求解析) 
-  - 基础参数
-  - 必要参数
-  - 多个数值 & 列表
-  - 其他源（Other Destinations）
-  - 参数位置
-  - 多位置参数
-  - 高级类型处理
-  - 解析器继承
-  - 文件上传
-  - 错误处理
-  - 错误消息
+  - [基础参数](#基础参数)
+  - [必要参数](#必要参数)
+  - [多个数值 & 列表](#多个数值-&-列表)
+  - [其他源（Other Destinations）](#其他源（Other-Destinations）)
+  - [参数位置](#参数位置)
+  - [多位置参数](#多位置参数)
+  - [高级类型处理](#高级类型处理)
+  - [解析器继承](#解析器继承)
+  - [文件上传](#文件上传)
+  - [错误处理](#错误处理)
+  - [错误消息](#错误消息)
 - [异常处理](#异常处理)
   - [Http异常处理](#Http异常处理)
   - [Flask终止助手](#Flask终止助手) 
@@ -811,6 +811,314 @@ person = address = api.schema_model('Person', {
 ```
 
 # 请求解析
+
+> ### 警告:
+>
+> Flask-RESTful的整个请求解析器部分将被移除，取而代之的是关于如何与其他更好地完成输入/输出的包(如marshmallow)集成的文档。这意味着它将一直保持到2.0，但是认为它已经过时了。不要担心，如果您的代码现在正在使用它，并且您希望继续这样做，那么它不会很快消失。
+
+基于Flask-RESTful的请求解析接口`reqparse`是在[argparse]()接口之后建模的。它的设计提供了简单和统一的访问flask.request对象上的任何变量。
+
+
+
+## 基础参数
+
+下面是请求解析器的一个简单示例。它在`flask.Request.values`字典中查找两个参数:一个整数和一个字符串
+
+```python
+from flask_restplus import reqparse
+
+parser = reqparse.RequestParser()
+parser.add_argument('rate', type=int, help='Rate cannot be converted')
+parser.add_argument('name')
+args = parser.parse_args()
+```
+
+> #### 提示:
+>
+> 默认的参数类型是unicode字符串。这在python3中是str，在python2中是unicode。
+
+如果您指定了`help`值，那么在解析类型错误时，它将被呈现为错误消息。如果没有指定帮助消息，则默认行为是从类型错误本身返回消息。有关详细信息，请参见[错误消息]()。
+
+> #### 提示：
+>
+> 默认情况下， **不需要** 参数。另外，请求中提供的不属于`RequestParser`的参数将被忽略。
+>
+> 在请求解析器中声明但未在请求本身中设置的参数默认为None。
+
+
+
+## 必要参数
+
+要为参数传递值，只需将`required=True`添加到`add_argument()`调用即可。
+
+```python
+parser.add_argument('name', required=True, help="Name cannot be blank!")
+```
+
+
+
+## 多个数值 & 列表
+
+如果您希望一个键能以列表的形式接收多个值，可以像下面这样传递参数`action='append'`
+
+```python
+parser.add_argument('name', action='append')
+```
+
+这会让您的请求变得像下面这样
+
+```cmd
+curl http://api.example.com -d "name=bob" -d "name=sue" -d "name=joe"
+```
+
+并且您的变量看上去会像下面这样
+
+```python
+args = parser.parse_args()
+args['name']    # ['bob', 'sue', 'joe']
+```
+
+
+
+如果您希望用逗号分隔的字符串能被分割成列表，并作为一个键的值，可以像下面这样传递参数`action='split'`
+
+```python
+parser.add_argument('fruits', action='split')
+```
+
+这会让您的请求变得像下面这样
+
+```cmd
+curl http://api.example.com -d "fruits=apple,lemon,cherry"
+```
+
+并且您的变量看上去会像下面这样
+
+```python
+args = parser.parse_args()
+args['fruits']    # ['apple', 'lemon', 'cherry']
+```
+
+
+
+## 其他源（Other Destinations）
+
+如果出于某种原因，希望在解析后将参数存储在不同的名称下，那么可以使用`dest`关键字参数。
+
+```python
+parser.add_argument('name', dest='public_name')
+
+args = parser.parse_args()
+args['public_name']
+```
+
+
+
+## 参数位置
+
+默认情况下，`RequestParser`尝试解析来自`flask.Request.values`和`flask.Request.json`的值。
+
+使用add_argument()的location参数来指定从哪些位置获取值。`flask.Request`上的任何变量都可以使用。例如
+
+```python
+# Look only in the POST body
+parser.add_argument('name', type=int, location='form')
+
+# Look only in the querystring
+parser.add_argument('PageSize', type=int, location='args')
+
+# From the request headers
+parser.add_argument('User-Agent', location='headers')
+
+# From http cookies
+parser.add_argument('session_id', location='cookies')
+
+# From file uploads
+parser.add_argument('picture', type=werkzeug.datastructures.FileStorage, location='files')
+
+```
+
+> #### 提示：
+>
+> 只有在location='json'时才使用type=list。有关更多细节，请参见这个[issue]()
+>
+> 使用location='form'是验证表单数据和记录表单字段的方法。
+
+
+
+## 多位置参数
+
+可以通过将列表传递给`location`来指定多个参数位置
+
+```python
+parser.add_argument('text', location=['headers', 'values'])
+```
+
+当指定多个位置时，来自指定的所有位置的参数将合并为单个MultiDict。最后列出的位置优先于结果集。
+
+如果参数位置列表包含`headers`，则参数名将不再不区分大小写，必须与标题大小写名称匹配(参见`str.title()`)。指定`location='headers'`(不作为列表)将保留大小写不敏感。
+
+
+
+## 高级类型处理
+
+有时，您需要比基本数据类型更多的类型来处理输入验证。input模块提供一些常见的类型处理
+
+- 用于更加广泛布尔处理的 `boolean()`
+- 用于IP地址的 `ipv4()` 和 `ipv6()`
+- 用于ISO8601日期和数据处理的[`date_from_iso8601()`]() 和 [`datetime_from_iso8601()`]()
+
+你只需要把它们用在 `type` 参数上
+
+```python
+parser.add_argument('flag', type=inputs.boolean)
+```
+
+有关可用 `input` 的完整列表，请参阅 [input文档](https://flask-restplus.readthedocs.io/en/stable/api.html#module-flask_restplus.inputs)。
+
+您也可以像下面这样编写自己的数据类型
+
+```python
+def my_type(value):
+    '''Parse my type'''
+    if not condition:
+        raise ValueError('This is not my type')
+    return parse(value)
+
+# Swagger documntation
+my_type.__schema__ = {'type': 'string', 'format': 'my-custom-format'}
+```
+
+
+
+## 解析器继承
+
+通常地，您会为您写的每一份资源配置不同的解析器。这样做的问题是解析器是否具有公共的参数。不同于重新写参数，您可以编写一个包含所有公共的参数的父解析器，然后用 `copy()`函数继承这个解析器。您也可以用 `replace_argument()`来重写父解析器里的任何参数，或者干脆用 `remove_argument()` 完全移除它。下面是例子
+
+```python
+from flask_restplus import reqparse
+
+parser = reqparse.RequestParser()
+parser.add_argument('foo', type=int)
+
+parser_copy = parser.copy()
+parser_copy.add_argument('bar', type=int)
+
+# parser_copy has both 'foo' and 'bar'
+
+parser_copy.replace_argument('foo', required=True, location='json')
+# 'foo' is now a required str located in json, not an int as defined
+#  by original parser
+
+parser_copy.remove_argument('foo')
+# parser_copy no longer has 'foo' argument
+```
+
+
+
+## 文件上传
+
+要使用 `RequestParser` 处理文件上传，您需要使用 `files` 位置并将 `type`设置为`FileStorage`。
+
+下面是例子
+
+```python
+from werkzeug.datastructures import FileStorage
+
+upload_parser = api.parser()
+upload_parser.add_argument('file', location='files',
+                           type=FileStorage, required=True)
+
+
+@api.route('/upload/')
+@api.expect(upload_parser)
+class Upload(Resource):
+    def post(self):
+        uploaded_file = args['file']  # This is FileStorage instance
+        url = do_something_with_file(uploaded_file)
+        return {'url': url}, 201
+```
+
+请参阅专用的[Flask文档]()部分。
+
+
+
+## 错误处理
+
+RequestParser 处理错误的默认方式是在第一个错误出现的时候终止。当您可能需要一些时间来处理某些参数的时候，这将是很有好处的。然而，将错误捆绑一起并且一次性发送回客户端通常是较好的处理。这种方式可以在Flask应用程序级别（Flask application level）或在特定的 RequestParser实例上被指定。为了在调用 RequestParser的时候使用捆绑错误的选项，需要传递 `bundle_errors `参数。下面是例子
+
+```python
+from flask_restplus import reqparse
+
+parser = reqparse.RequestParser(bundle_errors=True)
+parser.add_argument('foo', type=int, required=True)
+parser.add_argument('bar', type=int, required=True)
+
+# If a request comes in not containing both 'foo' and 'bar', the error that
+# will come back will look something like this.
+
+{
+    "message":  {
+        "foo": "foo error message",
+        "bar": "bar error message"
+    }
+}
+
+# The default behavior would only return the first error
+
+parser = RequestParser()
+parser.add_argument('foo', type=int, required=True)
+parser.add_argument('bar', type=int, required=True)
+
+{
+    "message":  {
+        "foo": "foo error message"
+    }
+}
+```
+
+程序的配置键是 "BUNDLE_ERRORS",下面是例子
+
+```python
+from flask import Flask
+
+app = Flask(__name__)
+app.config['BUNDLE_ERRORS'] = True
+```
+
+> #### 警告：
+>
+> `BUNDLE_ERRORS` 是一个重载了每个 `RequestParser` 实例里的 `bundle_errors` 选项的全局设定
+
+
+
+## 错误消息
+
+每个域的错误消息可以通过 `help` 参数来进行定制（也是在 `RequestParser.add_argument`当中）。
+
+如果不提供 `help` 参数，那么这个域的错误消息会是错误类型本身的字符串表示。否则，错误消息就是 `help` 参数的值
+
+help 参数可能包含一个插值标记（ interpolation token），就像 `{error_msg}` 这样，这个标记将会被错误类型的字符串表示替换。这允许您在保留原本的错误消息的同时定制消息，就像下面的例子这样
+
+```python
+from flask_restplus import reqparse
+
+
+parser = reqparse.RequestParser()
+parser.add_argument(
+    'foo',
+    choices=('one', 'two'),
+    help='Bad choice: {error_msg}'
+)
+
+# If a request comes in with a value of "three" for `foo`:
+
+{
+    "message":  {
+        "foo": "Bad choice: three is not a valid choice",
+    }
+}
+```
 
 
 
