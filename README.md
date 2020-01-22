@@ -10,6 +10,14 @@
 - 部分翻译内容可能并不准确，没把握的地方我都标记了原文
 - 文档采用[Typora](http://typora.io/)编写，推荐使用Typora进行查看
 
+# 鸣谢
+
+- 翻译：[hanerx](https://github.com/hanerx)、[smhhyyz](https://github.com/smhhyyz)
+
+# 开源许可
+
+- Flask-RESTPlus https://github.com/noirbizarre/flask-restplus/blob/master/LICENSE
+
 # 目录
 
 > ### 提示：
@@ -32,15 +40,15 @@
   - [基础用法](#基础用法) 
   - [重命名属性](#重命名属性) 
   - [默认值](#默认值) 
-  - 自定义字段（Custom Fields）& 多个数值
-  - Url & 其他预定义字段（Other Concrete Fields）
+  - [自定义字段（Custom Fields）& 多个数值](#自定义字段-Custom-Fields-多个数值) 
+  - [Url & 其他预定义字段（Other Concrete Fields）](#Url其他预定义字段Other-Concrete-Fields) 
   - [复杂结构](#复杂结构) 
   - [字段列表](#字段列表) 
-  - 通配符字段
-  - 嵌套字段
-  - `api.model()` 函数
-  - 自定义字段
-  - 跳过null字段（Skip fields which value is None）
+  - [通配符字段](#通配符字段) 
+  - [嵌套字段](#嵌套字段) 
+  - [`api.model()` 函数（`api.model()` factory）](#apimodel函数apimodelfactory) 
+  - [自定义字段](#自定义字段) 
+  - [跳过None字段（Skip fields which value is None）](#跳过None字段Skip-fields-which-value-is-None) 
   - [使用Json格式定义模型](#使用Json格式定义模型) 
 - [请求解析](#请求解析) 
   - [基础参数](#基础参数)
@@ -435,6 +443,54 @@ model = {
 }
 ```
 
+## 自定义字段（Custom Fields）& 多个数值
+
+有时候你有自定义格式的需求。你需要继承父类 **fields.Raw** 并实现 **format()** 函数。当存储多种信息的时候，这种方法很有用。例如：一个比特类型的字段，其各个位代表不同的值。您可以使用字段将单个属性多路复用到多个输出值。
+
+在这个例子中，`flag` 属性的第一位代表“正常”或“急迫”，第二位代表“已读”或”未读“。这些东西可以很容易的存入一个比特字段中，但是为了方便人类阅读将其转化成字符串字段是更好的选择。
+
+```python
+class UrgentItem(fields.Raw):
+    def format(self, value):
+        return "Urgent" if value & 0x01 else "Normal"
+
+class UnreadItem(fields.Raw):
+    def format(self, value):
+        return "Unread" if value & 0x02 else "Read"
+
+model = {
+    'name': fields.String,
+    'priority': UrgentItem(attribute='flags'),
+    'status': UnreadItem(attribute='flags'),
+}
+```
+
+## Url & 其他预定义字段（Other Concrete Fields）
+
+Flask-RESTPlus包含一个特殊字段， **fields.Url** ， 它可以为需求的资源类合成一个URL。这也是一个向响应中添加数据的好例子，而这些数据实际上并不存在于数据对象中。
+
+```python
+class RandomNumber(fields.Raw):
+    def output(self, key, obj):
+        return random.random()
+
+model = {
+    'name': fields.String,
+    # todo_resource is the endpoint name when you called api.route()
+    'uri': fields.Url('todo_resource'),
+    'random': RandomNumber,
+}
+```
+
+默认情况下，**fields.Url** 返回的是相对路径。为了生成带有协议（scheme）、主机名和端口的绝对路径，你可以在字段声明时添加 `absolute=True` 关键字。使用 `scheme` 关键字来覆盖原本的协议类型。
+
+```python
+model = {
+    'uri': fields.Url('todo_resource', absolute=True)
+    'https_uri': fields.Url('todo_resource', absolute=True, scheme='https')
+}
+```
+
 ## 复杂结构
 
 你可以通过 **marshal()** 函数将平面的数据结构转化成嵌套的数据结构：
@@ -471,6 +527,260 @@ model = {
 >>> data = {'name': 'Bougnazal', 'first_names' : ['Emile', 'Raoul']}
 >>> json.dumps(marshal(data, resource_fields))
 >>> '{"first_names": ["Emile", "Raoul"], "name": "Bougnazal"}'
+```
+
+## 通配符字段
+
+如果你不知道你要解组的字段名称，你可以使用 **通配符（Wildcard）** 。
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> import json
+>>>
+>>> wild = fields.Wildcard(fields.String)
+>>> wildcard_fields = {'*': wild}
+>>> data = {'John': 12, 'bob': 42, 'Jane': '68'}
+>>> json.dumps(marshal(data, wildcard_fields))
+>>> '{"Jane": "68", "bob": "42", "John": "12"}'
+```
+
+**通配符** 的名称将作为匹配的依据，如下所示
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> import json
+>>>
+>>> wild = fields.Wildcard(fields.String)
+>>> wildcard_fields = {'j*': wild}
+>>> data = {'John': 12, 'bob': 42, 'Jane': '68'}
+>>> json.dumps(marshal(data, wildcard_fields))
+>>> '{"Jane": "68", "John": "12"}'
+```
+
+> ### 提示：
+>
+> 值得注意的是，你需要把 **通配符** 定义在你的模型外面（也就是说你 **不能** 这么写：`res_fields = {'*': fields.Wildcard(fields.String)}`），因为它必须要保存字段是否已经被处理的状态。
+
+> ### 提示：
+>
+> 通配符并不是正则表达式，它只能接受通配符‘*’和‘?’。
+
+为了避免意料之外的情况，在混合 **通配符** 字段和其他字段使用的时候，请使用 `有序字典(OrderedDict)` 并且将 **通配符** 字段放在最后面。
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> from collections import OrderedDict
+>>> import json
+>>>
+>>> wild = fields.Wildcard(fields.Integer)
+>>> mod = OrderedDict()
+>>> mod['zoro'] = fields.String
+>>> mod['*'] = wild
+>>> # you can use it in api.model like this:
+>>> # some_fields = api.model('MyModel', mod)
+>>>
+>>> data = {'John': 12, 'bob': 42, 'Jane': '68', 'zoro': 72}
+>>> json.dumps(marshal(data, mod))
+>>> '{"zoro": "72", "Jane": 68, "bob": 42, "John": 12}'
+```
+
+## 嵌套字段
+
+虽然你可以通过嵌套字段将平面数据转换成多层结构的响应，但是你也可以通过 **Nested** 将多层结构的数据转换成适当的形式。
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> import json
+>>>
+>>> address_fields = {}
+>>> address_fields['line 1'] = fields.String(attribute='addr1')
+>>> address_fields['line 2'] = fields.String(attribute='addr2')
+>>> address_fields['city'] = fields.String(attribute='city')
+>>> address_fields['state'] = fields.String(attribute='state')
+>>> address_fields['zip'] = fields.String(attribute='zip')
+>>>
+>>> resource_fields = {}
+>>> resource_fields['name'] = fields.String
+>>> resource_fields['billing_address'] = fields.Nested(address_fields)
+>>> resource_fields['shipping_address'] = fields.Nested(address_fields)
+>>> address1 = {'addr1': '123 fake street', 'city': 'New York', 'state': 'NY', 'zip': '10468'}
+>>> address2 = {'addr1': '555 nowhere', 'city': 'New York', 'state': 'NY', 'zip': '10468'}
+>>> data = {'name': 'bob', 'billing_address': address1, 'shipping_address': address2}
+>>>
+>>> json.dumps(marshal(data, resource_fields))
+'{"billing_address": {"line 1": "123 fake street", "line 2": null, "state": "NY", "zip": "10468", "city": "New York"}, "name": "bob", "shipping_address": {"line 1": "555 nowhere", "line 2": null, "state": "NY", "zip": "10468", "city": "New York"}}'
+```
+
+这个例子使用了两个 **嵌套字段（Nested fields）** 。**嵌套字段** 的构造函数需要一个字段字典作为子字段的输入。一个 **嵌套字段（Nested）** 构造器和之前嵌套字典（之前的例子）的区别是：属性的上下文。在这个例子中，`billing_address` 是一个拥有子字段的复杂对象并且传递给嵌套字段的上下文是子对象，而不是原始 `data` 对象。换句话说： `data.billing_address.addr1` 作用域在这，而之前例子中 `data.addr1` 是本地（localtion）属性。请记住：**嵌套字段（Nested）** 和 **列表字段（List）** 会为属性创建新的作用域。
+
+在默认情况下，子字段的默认值是 `None` ，将生成具有嵌套字段的默认值的对象，而不是null。.这可以通过传递 `allow_null` 参数进行修改，请参阅 [**嵌套字段（Nested）**](https://flask-restplus.readthedocs.io/en/stable/api.html#flask_restplus.fields.Nested) 构造函数了解更多详细信息。
+
+使用 **嵌套字段** 和 **列表字段** 来编组拥有复杂结构的列表对象：
+
+```python
+user_fields = api.model('User', {
+    'id': fields.Integer,
+    'name': fields.String,
+})
+
+user_list_fields = api.model('UserList', {
+    'users': fields.List(fields.Nested(user_fields)),
+})
+```
+
+## `api.model()` 函数（`api.model()` factory）
+
+**model()** 函数允许你将你的模型实例化并注册到你的 **API** 或者 **命名空间（Namespace）** 中。
+
+```python
+my_fields = api.model('MyModel', {
+    'name': fields.String,
+    'age': fields.Integer(min=0)
+})
+
+# Equivalent to
+my_fields = Model('MyModel', {
+    'name': fields.String,
+    'age': fields.Integer(min=0)
+})
+api.models[my_fields.name] = my_fields
+```
+
+### 使用 `clone`进行复制
+
+**Model.clone()** 函数允许你复制一个已存在的模型，并对其进行扩展。这节省了你复制所有字段的时间。
+
+```python
+parent = Model('Parent', {
+    'name': fields.String
+})
+
+child = parent.clone('Child', {
+    'age': fields.Integer
+})
+```
+
+**Api/Namespace.clone** 同时也将其注册到了API中。
+
+```python
+parent = api.model('Parent', {
+    'name': fields.String
+})
+
+child = api.clone('Child', parent, {
+    'age': fields.Integer
+})
+```
+
+### 通过`api.inherit` 实现多态
+
+**Model.inherit()** 函数允许你通过”Swagger特色的方法（Swagger way）“扩展你的模型并着手于多态的处理。
+
+```python
+parent = api.model('Parent', {
+    'name': fields.String,
+    'class': fields.String(discriminator=True)
+})
+
+child = api.inherit('Child', parent, {
+    'extra': fields.String
+})
+```
+
+**Api/Namespace.clone** 会同时注册父模型和子模型到Swagger模型定义中。
+
+```python
+parent = Model('Parent', {
+    'name': fields.String,
+    'class': fields.String(discriminator=True)
+})
+
+child = parent.inherit('Child', {
+    'extra': fields.String
+})
+```
+
+只有在序列化对象中不存在属性时，才会使用序列化模型名填充本例中的 `class` 字段。
+
+**Polymorph** 字段允许您指定Python类和字段规范（fields specifications）之间的映射。
+
+```python
+mapping = {
+    Child1: child1_fields,
+    Child2: child2_fields,
+}
+
+fields = api.model('Thing', {
+    owner: fields.Polymorph(mapping)
+})
+```
+
+## 自定义字段
+
+自定义字段使你可以自定义格式化你的输出而不需要修改你的内部对象。你需要做到只是继承父类 **Raw** 并实现 **format()** 函数：
+
+```python
+class AllCapsString(fields.Raw):
+    def format(self, value):
+        return value.upper()
+
+
+# example usage
+fields = {
+    'name': fields.String,
+    'all_caps_name': AllCapsString(attribute='name'),
+}
+```
+
+你可以修改 **\_\_ schema_format\_\_** 、**\_\_schema_type\_\_** 和 **\_\_schema_example\_\_** 来指定字段输出类型和示例：
+
+```python
+class MyIntField(fields.Integer):
+    __schema_format__ = 'int64'
+
+class MySpecialField(fields.Raw):
+    __schema_type__ = 'some-type'
+    __schema_format__ = 'some-format'
+
+class MyVerySpecialField(fields.Raw):
+    __schema_example__ = 'hello, world'
+```
+
+## 跳过None字段（Skip fields which value is None）
+
+你可以跳过哪些值为 `None` 的字段而不是将他们渲染成Json格式的 `null` 。在你有很多字段值可能为空的时候这是一种很有效降低响应包体积的方法，但是哪个字段是 `None` 是不可预测的。
+
+让我们看看下面的示例，`skip_none` 这个关键字被设置为 `True` 。
+
+```python
+>>> from flask_restplus import Model, fields, marshal_with
+>>> import json
+>>> model = Model('Model', {
+...     'name': fields.String,
+...     'address_1': fields.String,
+...     'address_2': fields.String
+... })
+>>> @marshal_with(model, skip_none=True)
+... def get():
+...     return {'name': 'John', 'address_1': None}
+...
+>>> get()
+OrderedDict([('name', 'John')])
+```
+
+你可以看到 `address_1` 和 `address_2` 被 **marlshal_with()** 跳过了。`address_1` 被跳过是由于它的值是 `None` 。`address_2` 被跳过是由于 `get()` 返回的字典中不含有键 `address_2`。
+
+### 在嵌套字段中跳过None
+
+如果你的模块中使用了 **fields.Nested** ，你需要将 `skip_none=True` 关键字传给 **fields.Nested** 。
+
+```python
+>>> from flask_restplus import Model, fields, marshal_with
+>>> import json
+>>> model = Model('Model', {
+...     'name': fields.String,
+...     'location': fields.Nested(location_model, skip_none=True)
+... })
 ```
 
 ## 使用Json格式定义模型
