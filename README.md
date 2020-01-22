@@ -63,13 +63,13 @@
   - [`@api.route()`装饰器](#apiroute装饰器) 
   - [对字段进行文档编写](#对字段进行文档编写) 
   - [对函数进行文档编写](#对函数进行文档编写) 
-  - [级联（Cascading）](#级联（Cascading）) 
+  - [级联（Cascading）](#级联cascading) 
   - [已弃用标记](#已弃用标记) 
   - [隐藏文档](#隐藏文档) 
-  - 文档授权（Documenting authorizations）
+  - [文档授权（Documenting authorizations）](#文档授权Documenting-authorizations) 
   - [展示支持信息（Expose vendor Extensions）](#展示支持信息Expose-vendor-Extensions) 
   - [导出Swagger格式](#导出Swagger格式)
-  - Swagger UI
+  - [Swagger UI](#Swagger-UI) 
 - [Postman](#Postman) 
 - [项目扩展](#项目扩展)
   - [多命名空间](#多命名空间)
@@ -1012,7 +1012,41 @@ class ExpectHeaderResource(restplus.Resource):
 
 ## 级联（Cascading）
 
+函数的文档优先级高于类的文档，继承的文档高于其父类的文档。
 
+例如，这两个声明是等效的：
+
+- 函数文档继承类文档内容：
+
+  ```python
+  @api.route('/my-resource/<id>', endpoint='my-resource')
+  @api.params('id', 'An ID')
+  class MyResource(Resource):
+      def get(self, id):
+          return {}
+  ```
+
+- 函数文档覆盖类文档内容：
+
+  ```python
+  @api.route('/my-resource/<id>', endpoint='my-resource')
+  @api.param('id', 'Class-wide description')
+  class MyResource(Resource):
+      @api.param('id', 'An ID')
+      def get(self, id):
+          return {}
+  ```
+
+你也可以用类装饰器指定函数的文档。以下示例将产生与前两个示例相同的文档：
+
+```python
+@api.route('/my-resource/<id>', endpoint='my-resource')
+@api.params('id', 'Class-wide description')
+@api.doc(get={'params': {'id': 'An ID'}})
+class MyResource(Resource):
+    def get(self, id):
+        return {}
+```
 
 ## 已弃用标记
 
@@ -1086,6 +1120,97 @@ class Resource4(Resource):
 >
 > 没有附加的资源类的命名空间会自动的在文档中隐藏。
 
+## 文档授权（Documenting authorizations）
+
+你可以通过 `authorizations` 关键字修改文档授权信息。查看 [Swagger授权文档（Swagger Authentication documentation）](https://swagger.io/docs/specification/2-0/authentication/) 了解详细配置方法。
+
+- `authorizations` 是以Python字典的形式表现Swagger `securityDefinitions` 的配置信息。
+
+  ```python
+  authorizations = {
+      'apikey': {
+          'type': 'apiKey',
+          'in': 'header',
+          'name': 'X-API-KEY'
+      }
+  }
+  api = Api(app, authorizations=authorizations)
+  ```
+
+配置授权之后每个资源类和方法的解释器均需配置授权：
+
+```python
+@api.route('/resource/')
+class Resource1(Resource):
+    @api.doc(security='apikey')
+    def get(self):
+        pass
+
+    @api.doc(security='apikey')
+    def post(self):
+        pass
+```
+
+你可以通过 `security` 关键字在 `Api` 的构造函数中全局的应用这个配置：
+
+```python
+authorizations = {
+    'apikey': {
+        'type': 'apiKey',
+        'in': 'header',
+        'name': 'X-API-KEY'
+    }
+}
+api = Api(app, authorizations=authorizations, security='apikey')
+```
+
+你也可以设置多种授权机制：
+
+```python
+authorizations = {
+    'apikey': {
+        'type': 'apiKey',
+        'in': 'header',
+        'name': 'X-API'
+    },
+    'oauth2': {
+        'type': 'oauth2',
+        'flow': 'accessCode',
+        'tokenUrl': 'https://somewhere.com/token',
+        'authorizationUrl': 'https://somewhere.com/auth',
+        'scopes': {
+            'read': 'Grant read-only access',
+            'write': 'Grant read-write access',
+        }
+    }
+}
+api = Api(self.app, security=['apikey', {'oauth2': 'read'}], authorizations=authorizations)
+```
+
+安全机制也可以通过特定的函数覆盖：
+
+```python
+@api.route('/authorizations/')
+class Authorized(Resource):
+    @api.doc(security=[{'oauth2': ['read', 'write']}])
+    def get(self):
+        return {}
+```
+
+你可以通过给 `security` 关键字传入 `None` 或一个空列表禁用某个资源类或方法的安全机制：
+
+```python
+@api.route('/without-authorization/')
+class WithoutAuthorization(Resource):
+    @api.doc(security=[])
+    def get(self):
+        return {}
+
+    @api.doc(security=None)
+    def post(self):
+        return {}
+```
+
 ## 展示支持信息（Expose vendor Extensions）
 
 Swagger允许你自定义 [支持信息（vendor extensions ）](http://swagger.io/specification/#specification-extensions-128) ，而Flask-RESTPlus可以通过 `@api.vendor` 修饰器对其进行设置。
@@ -1114,6 +1239,165 @@ from flask import json
 from myapp import api
 
 print(json.dumps(api.__schema__))
+```
+
+## Swagger UI
+
+在默认情况下，`Flask-RESTPlus` 在API的根目录提供 Swagger UI 文档服务。
+
+```python
+from flask import Flask
+from flask_restplus import Api, Resource, fields
+
+app = Flask(__name__)
+api = Api(app, version='1.0', title='Sample API',
+    description='A sample API',
+)
+
+@api.route('/my-resource/<id>')
+@api.doc(params={'id': 'An ID'})
+class MyResource(Resource):
+    def get(self, id):
+        return {}
+
+    @api.response(403, 'Not Authorized')
+    def post(self, id):
+        api.abort(403)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+```
+
+运行上面的代码并访问API的根目录（[http://localhost:5000](http://localhost:5000/)），你就能看到自动生成的Swagger UI文档。
+
+![_images/screenshot-apidoc-quickstart.png](https://flask-restplus.readthedocs.io/en/stable/_images/screenshot-apidoc-quickstart.png)
+
+### 个性化
+
+你可以通过 `doc` 关键字配置 Swagger UI 的路径（默认为根目录）：
+
+```python
+from flask import Flask, Blueprint
+from flask_restplus import Api
+
+app = Flask(__name__)
+blueprint = Blueprint('api', __name__, url_prefix='/api')
+api = Api(blueprint, doc='/doc/')
+
+app.register_blueprint(blueprint)
+
+assert url_for('api.doc') == '/api/doc/'
+```
+
+你可以通过设定 `config.SWAGGER_VALIDATOR_URL` 来指定一个自定义的验证器地址（validator URL）：
+
+```python
+from flask import Flask
+from flask_restplus import Api
+
+app = Flask(__name__)
+app.config.SWAGGER_VALIDATOR_URL = 'http://domain.com/validator'
+
+api = Api(app)
+```
+
+您可以启用 [OAuth2隐式流程（OAuth2 Implicit Flow）](https://oauth.net/2/grant-types/implicit/) ，以获取用于在Swagger UI中交互测试api端点的授权令牌。 `config.SWAGGER_UI_OAUTH_CLIENT_ID` 、 `authorizationUrl` 和 `scopes` 将用于指定你的OAuth2 IDP配置。 **域字符串（realm string）** 将会作为查询参数（query parameter） 添加到 授权地址（authorizationUrl） 和 凭证地址（tokenUrl）。这些值都是公开信息。此处未指定 *客户端密钥（client secret）*。使用PKCE代替隐式流取决于https://github.com/swagger-api/swagger-ui/issues/5348
+
+```python
+from flask import Flask
+app = Flask(__name__)
+
+app.config.SWAGGER_UI_OAUTH_CLIENT_ID = 'MyClientId'
+app.config.SWAGGER_UI_OAUTH_REALM = '-'
+app.config.SWAGGER_UI_OAUTH_APP_NAME = 'Demo'
+
+api = Api(
+    app,
+    title=app.config.SWAGGER_UI_OAUTH_APP_NAME,
+    security={'OAuth2': ['read', 'write']},
+    authorizations={
+        'OAuth2': {
+            'type': 'oauth2',
+            'flow': 'implicit',
+            'authorizationUrl': 'https://idp.example.com/authorize?audience=https://app.example.com',
+            'clientId': app.config.SWAGGER_UI_OAUTH_CLIENT_ID,
+            'scopes': {
+                'openid': 'Get ID token',
+                'profile': 'Get identity',
+            }
+        }
+    }
+)
+```
+
+你也可以通过修改 `config.SWAGGER_UI_DOC_EXPANSION`  (`'none'`, `'list'` 或 `'full'`) 来指定初期标签展开状态（the initial expansion state）。
+
+```python
+from flask_restplus import Api
+
+app = Flask(__name__)
+app.config.SWAGGER_UI_DOC_EXPANSION = 'list'
+
+api = Api(app)
+```
+
+默认情况下， **操作ID（operation ID）** 和 **请求区间（request duration）** 是影藏的，可以通过下面的方法分别启用它们：
+
+```python
+from flask import Flask
+from flask_restplus import Api
+
+app = Flask(__name__)
+app.config.SWAGGER_UI_OPERATION_ID = True
+app.config.SWAGGER_UI_REQUEST_DURATION = True
+
+api = Api(app)
+```
+
+如果你需要自定义UI，你可以通过 `documentation()` 修饰器来注册自定义视图：
+
+```python
+from flask import Flask
+from flask_restplus import Api, apidoc
+
+app = Flask(__name__)
+api = Api(app)
+
+@api.documentation
+def custom_ui():
+    return apidoc.ui_for(api)
+```
+
+### 配置“试一试（Try it Out）”
+
+默认情况下，所有的路径和方法都有一个“试一试（Try it Out）”按钮用于在浏览器中测试API。你可以通过修改 `SWAGGER_SUPPORTED_SUBMIT_METHODS` 的配置禁用任意一种Http方法，该参数支持符合 [Swagger UI 参数（Swagger UI parameter）](https://github.com/swagger-api/swagger-ui/blob/master/docs/usage/configuration.md#network/)  的 `supportedSubmitMethods` 参数的所有值。
+
+```python
+from flask import Flask
+from flask_restplus import Api
+
+app = Flask(__name__)
+
+# disable Try it Out for all methods
+app.config.SWAGGER_SUPPORTED_SUBMIT_METHODS = []
+
+# enable Try it Out for specific methods
+app.config.SWAGGER_SUPPORTED_SUBMIT_METHODS = ["get", "post"]
+
+api = Api(app)
+```
+
+### 禁用文档
+
+设置 `doc=False` 可以完全禁用文档。
+
+```python
+from flask import Flask
+from flask_restplus import Api
+
+app = Flask(__name__)
+api = Api(app, doc=False)
 ```
 
 # 异常处理
