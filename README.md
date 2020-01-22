@@ -53,8 +53,8 @@
 - [请求解析](#请求解析) 
   - [基础参数](#基础参数)
   - [必要参数](#必要参数)
-  - [多个数值 & 列表](#多个数值-&-列表)
-  - [其他源（Other Destinations）](#其他源（Other-Destinations）)
+  - [多个数值 & 列表](#多个数值和列表)
+  - [其他源（Other Destinations）](#其他源other-destinations)
   - [参数位置](#参数位置)
   - [多位置参数](#多位置参数)
   - [高级类型处理](#高级类型处理)
@@ -845,7 +845,7 @@ args = parser.parse_args()
 >
 > 默认的参数类型是unicode字符串。这在python3中是str，在python2中是unicode。
 
-如果您指定了`help`值，那么在解析类型错误时，它将被呈现为错误消息。如果没有指定帮助消息，则默认行为是从类型错误本身返回消息。有关详细信息，请参见[错误消息]()。
+如果您指定了`help`值，那么在解析类型错误时，它将被呈现为错误消息。如果没有指定帮助消息，则默认行为是从类型错误本身返回消息。有关详细信息，请参见[错误消息](#错误消息)。
 
 > #### 提示：
 >
@@ -865,7 +865,7 @@ parser.add_argument('name', required=True, help="Name cannot be blank!")
 
 
 
-## 多个数值 & 列表
+## 多个数值和列表
 
 如果您希望一个键能以列表的形式接收多个值，可以像下面这样传递参数`action='append'`
 
@@ -909,7 +909,7 @@ args['fruits']    # ['apple', 'lemon', 'cherry']
 
 
 
-## 其他源（Other Destinations）
+## 其他源（other destinations）
 
 如果出于某种原因，希望在解析后将参数存储在不同的名称下，那么可以使用`dest`关键字参数。
 
@@ -948,7 +948,7 @@ parser.add_argument('picture', type=werkzeug.datastructures.FileStorage, locatio
 
 > #### 提示：
 >
-> 只有在location='json'时才使用type=list。有关更多细节，请参见这个[issue]()
+> 只有在location='json'时才使用type=list。有关更多细节，请参见这个[issue](https://github.com/flask-restful/flask-restful/issues/380)
 >
 > 使用location='form'是验证表单数据和记录表单字段的方法。
 
@@ -974,7 +974,7 @@ parser.add_argument('text', location=['headers', 'values'])
 
 - 用于更加广泛布尔处理的 `boolean()`
 - 用于IP地址的 `ipv4()` 和 `ipv6()`
-- 用于ISO8601日期和数据处理的[`date_from_iso8601()`]() 和 [`datetime_from_iso8601()`]()
+- 用于ISO8601日期和数据处理的`date_from_iso8601()` 和 `datetime_from_iso8601()`
 
 你只需要把它们用在 `type` 参数上
 
@@ -1047,7 +1047,7 @@ class Upload(Resource):
         return {'url': url}, 201
 ```
 
-请参阅专用的[Flask文档]()部分。
+请参阅专用的[Flask文档](https://flask.palletsprojects.com/en/0.10.x/patterns/fileuploads/)部分。
 
 
 
