@@ -38,7 +38,7 @@
   - [字段列表](#字段列表) 
   - [通配符字段](#通配符字段) 
   - [嵌套字段](#嵌套字段) 
-  - `api.model()` 函数（`api.model()` factory）
+  - [`api.model()` 函数（`api.model()` factory）](#apimodel函数apimodelfactory) 
   - [自定义字段](#自定义字段) 
   - [跳过None字段（Skip fields which value is None）](#跳过None字段Skip-fields-which-value-is-None) 
   - [使用Json格式定义模型](#使用Json格式定义模型) 
@@ -578,7 +578,134 @@ model = {
 
 ## 嵌套字段
 
+虽然你可以通过嵌套字段将平面数据转换成多层结构的响应，但是你也可以通过 **Nested** 将多层结构的数据转换成适当的形式。
 
+```python
+>>> from flask_restplus import fields, marshal
+>>> import json
+>>>
+>>> address_fields = {}
+>>> address_fields['line 1'] = fields.String(attribute='addr1')
+>>> address_fields['line 2'] = fields.String(attribute='addr2')
+>>> address_fields['city'] = fields.String(attribute='city')
+>>> address_fields['state'] = fields.String(attribute='state')
+>>> address_fields['zip'] = fields.String(attribute='zip')
+>>>
+>>> resource_fields = {}
+>>> resource_fields['name'] = fields.String
+>>> resource_fields['billing_address'] = fields.Nested(address_fields)
+>>> resource_fields['shipping_address'] = fields.Nested(address_fields)
+>>> address1 = {'addr1': '123 fake street', 'city': 'New York', 'state': 'NY', 'zip': '10468'}
+>>> address2 = {'addr1': '555 nowhere', 'city': 'New York', 'state': 'NY', 'zip': '10468'}
+>>> data = {'name': 'bob', 'billing_address': address1, 'shipping_address': address2}
+>>>
+>>> json.dumps(marshal(data, resource_fields))
+'{"billing_address": {"line 1": "123 fake street", "line 2": null, "state": "NY", "zip": "10468", "city": "New York"}, "name": "bob", "shipping_address": {"line 1": "555 nowhere", "line 2": null, "state": "NY", "zip": "10468", "city": "New York"}}'
+```
+
+这个例子使用了两个 **嵌套字段（Nested fields）** 。**嵌套字段** 的构造函数需要一个字段字典作为子字段的输入。一个 **嵌套字段（Nested）** 构造器和之前嵌套字典（之前的例子）的区别是：属性的上下文。在这个例子中，`billing_address` 是一个拥有子字段的复杂对象并且传递给嵌套字段的上下文是子对象，而不是原始 `data` 对象。换句话说： `data.billing_address.addr1` 作用域在这，而之前例子中 `data.addr1` 是本地（localtion）属性。请记住：**嵌套字段（Nested）** 和 **列表字段（List）** 会为属性创建新的作用域。
+
+在默认情况下，子字段的默认值是 `None` ，将生成具有嵌套字段的默认值的对象，而不是null。.这可以通过传递 `allow_null` 参数进行修改，请参阅 [**嵌套字段（Nested）**](https://flask-restplus.readthedocs.io/en/stable/api.html#flask_restplus.fields.Nested) 构造函数了解更多详细信息。
+
+使用 **嵌套字段** 和 **列表字段** 来编组拥有复杂结构的列表对象：
+
+```python
+user_fields = api.model('User', {
+    'id': fields.Integer,
+    'name': fields.String,
+})
+
+user_list_fields = api.model('UserList', {
+    'users': fields.List(fields.Nested(user_fields)),
+})
+```
+
+## `api.model()` 函数（`api.model()` factory）
+
+**model()** 函数允许你将你的模型实例化并注册到你的 **API** 或者 **命名空间（Namespace）** 中。
+
+```python
+my_fields = api.model('MyModel', {
+    'name': fields.String,
+    'age': fields.Integer(min=0)
+})
+
+# Equivalent to
+my_fields = Model('MyModel', {
+    'name': fields.String,
+    'age': fields.Integer(min=0)
+})
+api.models[my_fields.name] = my_fields
+```
+
+### 使用 `clone`进行复制
+
+**Model.clone()** 函数允许你复制一个已存在的模型，并对其进行扩展。这节省了你复制所有字段的时间。
+
+```python
+parent = Model('Parent', {
+    'name': fields.String
+})
+
+child = parent.clone('Child', {
+    'age': fields.Integer
+})
+```
+
+**Api/Namespace.clone** 同时也将其注册到了API中。
+
+```python
+parent = api.model('Parent', {
+    'name': fields.String
+})
+
+child = api.clone('Child', parent, {
+    'age': fields.Integer
+})
+```
+
+### 通过`api.inherit` 实现多态
+
+**Model.inherit()** 函数允许你通过”Swagger特色的方法（Swagger way）“扩展你的模型并着手于多态的处理。
+
+```python
+parent = api.model('Parent', {
+    'name': fields.String,
+    'class': fields.String(discriminator=True)
+})
+
+child = api.inherit('Child', parent, {
+    'extra': fields.String
+})
+```
+
+**Api/Namespace.clone** 会同时注册父模型和子模型到Swagger模型定义中。
+
+```python
+parent = Model('Parent', {
+    'name': fields.String,
+    'class': fields.String(discriminator=True)
+})
+
+child = parent.inherit('Child', {
+    'extra': fields.String
+})
+```
+
+只有在序列化对象中不存在属性时，才会使用序列化模型名填充本例中的 `class` 字段。
+
+**Polymorph** 字段允许您指定Python类和字段规范（fields specifications）之间的映射。
+
+```python
+mapping = {
+    Child1: child1_fields,
+    Child2: child2_fields,
+}
+
+fields = api.model('Thing', {
+    owner: fields.Polymorph(mapping)
+})
+```
 
 ## 自定义字段
 
