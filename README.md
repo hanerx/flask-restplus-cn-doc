@@ -10,6 +10,10 @@
 - 部分翻译内容可能并不准确，没把握的地方我都标记了原文
 - 文档采用[Typora](http://typora.io/)编写，推荐使用Typora进行查看
 
+# 鸣谢
+
+- 翻译：[hanerx](https://github.com/hanerx)、[smhhyyz](https://github.com/smhhyyz)
+
 # 目录
 
 > ### 提示：
