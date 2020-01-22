@@ -1047,7 +1047,7 @@ class Upload(Resource):
         return {'url': url}, 201
 ```
 
-请参阅专用的[Flask文档]()部分。
+请参阅专用的[Flask文档](https://flask.palletsprojects.com/en/0.10.x/patterns/fileuploads/)部分。
 
 
 
