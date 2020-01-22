@@ -14,6 +14,10 @@
 
 - 翻译：[hanerx](https://github.com/hanerx)、[smhhyyz](https://github.com/smhhyyz)
 
+# 开源许可
+
+- Flask-RESTPlus https://github.com/noirbizarre/flask-restplus/blob/master/LICENSE
+
 # 目录
 
 > ### 提示：
