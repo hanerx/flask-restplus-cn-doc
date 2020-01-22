@@ -12,6 +12,14 @@
 
 # 目录
 
+> ### 提示：
+>
+> 部分无法跳转的目录是由于未完成翻译，如果目录有误请另开issue反馈。
+
+> ### 提示：
+>
+> 目录是为了方便Github在线观看使用，部分目录在Typora中是不可用的，下载用户请使用Typora自带的大纲功能。
+
 - [安装](#安装)
 - [快速开始](#快速开始) 
   - [初始化](#初始化) 
@@ -21,20 +29,20 @@
   - [参数解析](#参数解析) 
   - [数据格式化](#数据格式化) 
 - [响应编组](#响应编组) 
-  - 基础用法
-  - 重命名属性
-  - 默认值
+  - [基础用法](#基础用法) 
+  - [重命名属性](#重命名属性) 
+  - [默认值](#默认值) 
   - 自定义字段（Custom Fields）& 多个数值
   - Url & 其他预定义字段（Other Concrete Fields）
-  - 复杂结构
-  - 列表字段
+  - [复杂结构](#复杂结构) 
+  - [字段列表](#字段列表) 
   - 通配符字段
   - 嵌套字段
   - `api.model()` 函数
   - 自定义字段
   - 跳过null字段（Skip fields which value is None）
-  - 使用Json格式定义模型
-- 请求解析
+  - [使用Json格式定义模型](#使用Json格式定义模型) 
+- [请求解析](#请求解析) 
   - 基础参数
   - 必要参数
   - 多个数值 & 列表
@@ -76,7 +84,7 @@
   - [使用蓝图](#使用蓝图) 
   - [具有可重用名称空间的多个API（Multiple APIs with reusable namespaces）](#具有可重用名称空间的多个apimultiple-apis-with-reusable-namespaces)
 - [完整实例](#完整实例)
-- API
+- ~~API（懒得翻译了，等什么时候我记起来再说）~~
 
 # 安装
 
@@ -344,6 +352,165 @@ class Todo(Resource):
 - 使用 **marshal()** 局部设置：return marshal(data, fields, ordered=True)
 
 # 响应编组
+
+Flask-RESTPlus提供了一种很简单的方法去控制你响应的渲染内容或控制实际输入与期望输入相同（expect as in input payload）。通过 **字段（fields）** 模块，你可以在你的资源类中使用任何的对象（ORM 模型、自定义的类……）。 **字段（fields）** 同时能帮助你格式化和过滤请求，因此你将不需要担心会暴露内部的数据结构。
+
+同时这也将提高代码的可读性，你可以轻易的看出哪些数据会被渲染哪些数据会被格式化输出。
+
+## 基础用法
+
+你可以定义一个字典（dict）或有序字典（OrderedDict）来存放其键的属性名称或要渲染的对象上的键的字段，并且其值是将格式化并返回该字段的值的类。下面的例子有三个字段：2个是 **String** ，1个是 **DateTime** ， **DateTime** 将被格式化为ISO 8601日期时间字符串（ISO 8601 datetime string）（当然RFC 822也是支持的）：
+
+```python
+from flask_restplus import Resource, fields
+
+model = api.model('Model', {
+    'name': fields.String,
+    'address': fields.String,
+    'date_updated': fields.DateTime(dt_format='rfc822'),
+})
+
+@api.route('/todo')
+class Todo(Resource):
+    @api.marshal_with(model, envelope='resource')
+    def get(self, **kwargs):
+        return db_get_todo()  # Some function that queries the db
+```
+
+在这个例子里面你有一个自定义的数据库对象（`todo`），它拥有 `name` 、 `address` 和 `date_updated` 属性。整个对象的其他附加属性都将是私有的并且不会在输出中渲染。指定了一个可选的 `envelope` 关键字参数来包装结果输出。
+
+**marlshal_with()** 修饰器实际上将你的对象做了字段过滤。编组（marlshaling）可以用于单个对象、字典、由对象组成的列表。
+
+> ### 提示：
+>
+> `marlshal_with()` 是一个很方便的修饰器，它在功能上和下面的代码等同：
+>
+> ```python
+> class Todo(Resource):
+>     def get(self, **kwargs):
+>         return marshal(db_get_todo(), model), 200
+> ```
+>
+> `@api.marlshal_with()` 添加了Swagger文档的功能。
+
+这种显示的声明可以用于在正常响应时返回一个大于200的HTTP状态码（查看 [**abort()**](https://flask-restplus.readthedocs.io/en/stable/api.html#flask_restplus.errors.abort) 获取异常相关信息）。（译者：API并没有翻译，这里是原版的API文档）
+
+## 重命名属性
+
+很多时候内部字段名和外部的字段名是不一样的。你可以使用 `attribute` 关键字来配置这种映射关系。
+
+```python
+model = {
+    'name': fields.String(attribute='private_name'),
+    'address': fields.String,
+}
+```
+
+`attribute` 关键字也支持lambda表达式或任何可调用对象。
+
+```python
+model = {
+    'name': fields.String(attribute=lambda x: x._private_name),
+    'address': fields.String,
+}
+```
+
+嵌套属性（Nested properties）也可以通过 `attribute` 进行访问。
+
+```python
+model = {
+    'name': fields.String(attribute='people_list.0.person_dictionary.name'),
+    'address': fields.String,
+}
+```
+
+## 默认值
+
+如果你的数据对象里没有字段列表中对应的属性，你可以指定一个默认值而不是返回一个 `None`。
+
+```python
+model = {
+    'name': fields.String(default='Anonymous User'),
+    'address': fields.String,
+}
+```
+
+## 复杂结构
+
+你可以通过 **marshal()** 函数将平面的数据结构转化成嵌套的数据结构：
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> import json
+>>>
+>>> resource_fields = {'name': fields.String}
+>>> resource_fields['address'] = {}
+>>> resource_fields['address']['line 1'] = fields.String(attribute='addr1')
+>>> resource_fields['address']['line 2'] = fields.String(attribute='addr2')
+>>> resource_fields['address']['city'] = fields.String
+>>> resource_fields['address']['state'] = fields.String
+>>> resource_fields['address']['zip'] = fields.String
+>>> data = {'name': 'bob', 'addr1': '123 fake street', 'addr2': '', 'city': 'New York', 'state': 'NY', 'zip': '10468'}
+>>> json.dumps(marshal(data, resource_fields))
+'{"name": "bob", "address": {"line 1": "123 fake street", "line 2": "", "state": "NY", "zip": "10468", "city": "New York"}}'
+```
+
+> ### 提示：
+>
+> 地址字段实际上并不存在于数据对象上，但是任何子字段都可以直接从对象访问属性，就好像它们没有嵌套一样。
+
+## 字段列表
+
+你也可以将字段解组成列表。
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> import json
+>>>
+>>> resource_fields = {'name': fields.String, 'first_names': fields.List(fields.String)}
+>>> data = {'name': 'Bougnazal', 'first_names' : ['Emile', 'Raoul']}
+>>> json.dumps(marshal(data, resource_fields))
+>>> '{"first_names": ["Emile", "Raoul"], "name": "Bougnazal"}'
+```
+
+## 使用Json格式定义模型
+
+你也可以使用 [Json格式](http://json-schema.org/examples.html) （Draft v4）来定义模型。
+
+```python
+address = api.schema_model('Address', {
+    'properties': {
+        'road': {
+            'type': 'string'
+        },
+    },
+    'type': 'object'
+})
+
+person = address = api.schema_model('Person', {
+    'required': ['address'],
+    'properties': {
+        'name': {
+            'type': 'string'
+        },
+        'age': {
+            'type': 'integer'
+        },
+        'birthdate': {
+            'type': 'string',
+            'format': 'date-time'
+        },
+        'address': {
+            '$ref': '#/definitions/Address',
+        }
+    },
+    'type': 'object'
+})
+```
+
+# 请求解析
+
+
 
 # 字段掩码（Fields masks）
 
@@ -1271,7 +1438,7 @@ if __name__ == '__main__':
 
 运行上面的代码并访问API的根目录（[http://localhost:5000](http://localhost:5000/)），你就能看到自动生成的Swagger UI文档。
 
-![_images/screenshot-apidoc-quickstart.png](https://flask-restplus.readthedocs.io/en/stable/_images/screenshot-apidoc-quickstart.png)
+![](./img/screenshot-apidoc-quickstart.png)
 
 ### 个性化
 
