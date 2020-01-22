@@ -32,15 +32,15 @@
   - [基础用法](#基础用法) 
   - [重命名属性](#重命名属性) 
   - [默认值](#默认值) 
-  - 自定义字段（Custom Fields）& 多个数值
-  - Url & 其他预定义字段（Other Concrete Fields）
+  - [自定义字段（Custom Fields）& 多个数值](#自定义字段-Custom Fields-多个数值) 
+  - [Url & 其他预定义字段（Other Concrete Fields）](#Url其他预定义字段Other-Concrete-Fields) 
   - [复杂结构](#复杂结构) 
   - [字段列表](#字段列表) 
-  - 通配符字段
-  - 嵌套字段
-  - `api.model()` 函数
-  - 自定义字段
-  - 跳过null字段（Skip fields which value is None）
+  - [通配符字段](#通配符字段) 
+  - [嵌套字段](#嵌套字段) 
+  - `api.model()` 函数（`api.model()` factory）
+  - [自定义字段](#自定义字段) 
+  - [跳过None字段（Skip fields which value is None）](#跳过None字段Skip-fields-which-value-is-None) 
   - [使用Json格式定义模型](#使用Json格式定义模型) 
 - [请求解析](#请求解析) 
   - 基础参数
@@ -435,6 +435,54 @@ model = {
 }
 ```
 
+## 自定义字段（Custom Fields）& 多个数值
+
+有时候你有自定义格式的需求。你需要继承父类 **fields.Raw** 并实现 **format()** 函数。当存储多种信息的时候，这种方法很有用。例如：一个比特类型的字段，其各个位代表不同的值。您可以使用字段将单个属性多路复用到多个输出值。
+
+在这个例子中，`flag` 属性的第一位代表“正常”或“急迫”，第二位代表“已读”或”未读“。这些东西可以很容易的存入一个比特字段中，但是为了方便人类阅读将其转化成字符串字段是更好的选择。
+
+```python
+class UrgentItem(fields.Raw):
+    def format(self, value):
+        return "Urgent" if value & 0x01 else "Normal"
+
+class UnreadItem(fields.Raw):
+    def format(self, value):
+        return "Unread" if value & 0x02 else "Read"
+
+model = {
+    'name': fields.String,
+    'priority': UrgentItem(attribute='flags'),
+    'status': UnreadItem(attribute='flags'),
+}
+```
+
+## Url & 其他预定义字段（Other Concrete Fields）
+
+Flask-RESTPlus包含一个特殊字段， **fields.Url** ， 它可以为需求的资源类合成一个URL。这也是一个向响应中添加数据的好例子，而这些数据实际上并不存在于数据对象中。
+
+```python
+class RandomNumber(fields.Raw):
+    def output(self, key, obj):
+        return random.random()
+
+model = {
+    'name': fields.String,
+    # todo_resource is the endpoint name when you called api.route()
+    'uri': fields.Url('todo_resource'),
+    'random': RandomNumber,
+}
+```
+
+默认情况下，**fields.Url** 返回的是相对路径。为了生成带有协议（scheme）、主机名和端口的绝对路径，你可以在字段声明时添加 `absolute=True` 关键字。使用 `scheme` 关键字来覆盖原本的协议类型。
+
+```python
+model = {
+    'uri': fields.Url('todo_resource', absolute=True)
+    'https_uri': fields.Url('todo_resource', absolute=True, scheme='https')
+}
+```
+
 ## 复杂结构
 
 你可以通过 **marshal()** 函数将平面的数据结构转化成嵌套的数据结构：
@@ -471,6 +519,133 @@ model = {
 >>> data = {'name': 'Bougnazal', 'first_names' : ['Emile', 'Raoul']}
 >>> json.dumps(marshal(data, resource_fields))
 >>> '{"first_names": ["Emile", "Raoul"], "name": "Bougnazal"}'
+```
+
+## 通配符字段
+
+如果你不知道你要解组的字段名称，你可以使用 **通配符（Wildcard）** 。
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> import json
+>>>
+>>> wild = fields.Wildcard(fields.String)
+>>> wildcard_fields = {'*': wild}
+>>> data = {'John': 12, 'bob': 42, 'Jane': '68'}
+>>> json.dumps(marshal(data, wildcard_fields))
+>>> '{"Jane": "68", "bob": "42", "John": "12"}'
+```
+
+**通配符** 的名称将作为匹配的依据，如下所示
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> import json
+>>>
+>>> wild = fields.Wildcard(fields.String)
+>>> wildcard_fields = {'j*': wild}
+>>> data = {'John': 12, 'bob': 42, 'Jane': '68'}
+>>> json.dumps(marshal(data, wildcard_fields))
+>>> '{"Jane": "68", "John": "12"}'
+```
+
+> ### 提示：
+>
+> 值得注意的是，你需要把 **通配符** 定义在你的模型外面（也就是说你 **不能** 这么写：`res_fields = {'*': fields.Wildcard(fields.String)}`），因为它必须要保存字段是否已经被处理的状态。
+
+> ### 提示：
+>
+> 通配符并不是正则表达式，它只能接受通配符‘*’和‘?’。
+
+为了避免意料之外的情况，在混合 **通配符** 字段和其他字段使用的时候，请使用 `有序字典(OrderedDict)` 并且将 **通配符** 字段放在最后面。
+
+```python
+>>> from flask_restplus import fields, marshal
+>>> from collections import OrderedDict
+>>> import json
+>>>
+>>> wild = fields.Wildcard(fields.Integer)
+>>> mod = OrderedDict()
+>>> mod['zoro'] = fields.String
+>>> mod['*'] = wild
+>>> # you can use it in api.model like this:
+>>> # some_fields = api.model('MyModel', mod)
+>>>
+>>> data = {'John': 12, 'bob': 42, 'Jane': '68', 'zoro': 72}
+>>> json.dumps(marshal(data, mod))
+>>> '{"zoro": "72", "Jane": 68, "bob": 42, "John": 12}'
+```
+
+## 嵌套字段
+
+
+
+## 自定义字段
+
+自定义字段使你可以自定义格式化你的输出而不需要修改你的内部对象。你需要做到只是继承父类 **Raw** 并实现 **format()** 函数：
+
+```python
+class AllCapsString(fields.Raw):
+    def format(self, value):
+        return value.upper()
+
+
+# example usage
+fields = {
+    'name': fields.String,
+    'all_caps_name': AllCapsString(attribute='name'),
+}
+```
+
+你可以修改 **\_\_ schema_format\_\_** 、**\_\_schema_type\_\_** 和 **\_\_schema_example\_\_** 来指定字段输出类型和示例：
+
+```python
+class MyIntField(fields.Integer):
+    __schema_format__ = 'int64'
+
+class MySpecialField(fields.Raw):
+    __schema_type__ = 'some-type'
+    __schema_format__ = 'some-format'
+
+class MyVerySpecialField(fields.Raw):
+    __schema_example__ = 'hello, world'
+```
+
+## 跳过None字段（Skip fields which value is None）
+
+你可以跳过哪些值为 `None` 的字段而不是将他们渲染成Json格式的 `null` 。在你有很多字段值可能为空的时候这是一种很有效降低响应包体积的方法，但是哪个字段是 `None` 是不可预测的。
+
+让我们看看下面的示例，`skip_none` 这个关键字被设置为 `True` 。
+
+```python
+>>> from flask_restplus import Model, fields, marshal_with
+>>> import json
+>>> model = Model('Model', {
+...     'name': fields.String,
+...     'address_1': fields.String,
+...     'address_2': fields.String
+... })
+>>> @marshal_with(model, skip_none=True)
+... def get():
+...     return {'name': 'John', 'address_1': None}
+...
+>>> get()
+OrderedDict([('name', 'John')])
+```
+
+你可以看到 `address_1` 和 `address_2` 被 **marlshal_with()** 跳过了。`address_1` 被跳过是由于它的值是 `None` 。`address_2` 被跳过是由于 `get()` 返回的字典中不含有键 `address_2`。
+
+### 在嵌套字段中跳过None
+
+如果你的模块中使用了 **fields.Nested** ，你需要将 `skip_none=True` 关键字传给 **fields.Nested** 。
+
+```python
+>>> from flask_restplus import Model, fields, marshal_with
+>>> import json
+>>> model = Model('Model', {
+...     'name': fields.String,
+...     'location': fields.Nested(location_model, skip_none=True)
+... })
 ```
 
 ## 使用Json格式定义模型
